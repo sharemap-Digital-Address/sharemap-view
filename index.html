@@ -281,6 +281,31 @@
                 .trim();
         }
 
+        // Dedicated Plus Code Extractor gamit ang OLC Library
+        function parsePlusCode(text) {
+            try {
+                // Regular expression para hanapin ang Plus Code format (e.g. WHRV+69 o 7Q53WJQ4+CG)
+                const match = text.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
+                if (match) {
+                    let code = match[0].toUpperCase();
+                    let fullCode = code;
+
+                    // Kung maikling code (tulad ng WHRV+69), i-recover gamit ang kasalukuyang Lucena center
+                    if (OpenLocationCode.isShort(code)) {
+                        fullCode = OpenLocationCode.recoverNearest(code, currentLat, currentLng);
+                    }
+
+                    if (OpenLocationCode.isValid(fullCode)) {
+                        const decoded = OpenLocationCode.decode(fullCode);
+                        return { lat: decoded.latitudeCenter, lng: decoded.longitudeCenter, code: code };
+                    }
+                }
+            } catch(e) {
+                console.error("OLC Parse Error:", e);
+            }
+            return null;
+        }
+
         let currentLat = 13.9373;
         let currentLng = 121.6171;
 
@@ -322,23 +347,13 @@
             }
         }
 
-        // Universal Parser para sa Plus Code, Geo Coordinates, at Address
         async function searchAddress(query) {
             query = query.trim();
 
-            // 1. Plus Code Check gamit ang OLC library
-            if (query.includes('+')) {
-                try {
-                    let cleanCode = query.split(',')[0].trim();
-                    let fullCode = cleanCode;
-                    if (OpenLocationCode.isShort(cleanCode)) {
-                        fullCode = OpenLocationCode.recoverNearest(cleanCode, currentLat, currentLng);
-                    }
-                    if (OpenLocationCode.isValid(fullCode)) {
-                        const decoded = OpenLocationCode.decode(fullCode);
-                        return { lat: decoded.latitudeCenter, lng: decoded.longitudeCenter, name: query };
-                    }
-                } catch(e) {}
+            // 1. Subukang basahin bilang Plus Code
+            const plusResult = parsePlusCode(query);
+            if (plusResult) {
+                return { lat: plusResult.lat, lng: plusResult.lng, name: query };
             }
 
             // 2. Geo Coordinates Check (lat, lng)
@@ -348,7 +363,7 @@
                 return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), name: query };
             }
 
-            // 3. OpenStreetMap / Nominatim Search para sa Text Address
+            // 3. OpenStreetMap Search
             const cleanedQuery = cleanGoogleAddress(query);
             try {
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(cleanedQuery)}`);
@@ -422,39 +437,28 @@
                 let hasResults = false;
                 const lowerQuery = query.toLowerCase();
 
-                // 1. PLUS CODE PRIORITIZED CHECK (Kahit may kasamang letters/address o maikli/buo)
-                if (query.includes('+')) {
-                    try {
-                        let cleanCode = query.split(',')[0].trim();
-                        let fullCode = cleanCode;
-                        if (OpenLocationCode.isShort(cleanCode)) {
-                            fullCode = OpenLocationCode.recoverNearest(cleanCode, currentLat, currentLng);
-                        }
-                        if (OpenLocationCode.isValid(fullCode)) {
-                            const decoded = OpenLocationCode.decode(fullCode);
-                            hasResults = true;
-                            
-                            const item = document.createElement('div');
-                            item.className = 'suggestion-item pluscode';
-                            item.innerText = `📍 [Plus Code Match] ${query}`;
-                            item.onclick = () => {
-                                addressInput.value = query;
-                                clearBtn.style.display = "block";
-                                suggestionsBox.style.display = "none";
+                // 1. PLUS CODE REAL-TIME CHECK
+                const plusResult = parsePlusCode(query);
+                if (plusResult) {
+                    hasResults = true;
+                    const item = document.createElement('div');
+                    item.className = 'suggestion-item pluscode';
+                    item.innerText = `📍 [Plus Code] ${query}`;
+                    item.onclick = () => {
+                        addressInput.value = query;
+                        clearBtn.style.display = "block";
+                        suggestionsBox.style.display = "none";
 
-                                map.setView([decoded.latitudeCenter, decoded.longitudeCenter], 17);
-                                marker.setLatLng([decoded.latitudeCenter, decoded.longitudeCenter]);
-                                updateStreetView(decoded.latitudeCenter, decoded.longitudeCenter);
-                                updateDetails(decoded.latitudeCenter, decoded.longitudeCenter, `Plus Code: ${query}`);
+                        map.setView([plusResult.lat, plusResult.lng], 17);
+                        marker.setLatLng([plusResult.lat, plusResult.lng]);
+                        updateStreetView(plusResult.lat, plusResult.lng);
+                        updateDetails(plusResult.lat, plusResult.lng, `Plus Code: ${query}`);
 
-                                saveToSearchHistory({ name: query, lat: decoded.latitudeCenter, lng: decoded.longitudeCenter });
-                            };
-                            suggestionsBox.appendChild(item);
-                            
-                            suggestionsBox.style.display = "block";
-                            return; // Kung valid Plus Code, hindi na dadaan sa iba para walang sablay!
-                        }
-                    } catch(e) {}
+                        saveToSearchHistory({ name: query, lat: plusResult.lat, lng: plusResult.lng });
+                    };
+                    suggestionsBox.appendChild(item);
+                    suggestionsBox.style.display = "block";
+                    return;
                 }
 
                 // 2. FILTERED RECENT SEARCHES
