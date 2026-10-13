@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ShareMap Split-View: Branch & History Directory</title>
+    <title>ShareMap Split-View: Map & Street View Preview</title>
     
     <!-- Leaflet CSS para sa Map View -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -69,7 +69,7 @@
             background: #0f172a;
             border: 1px solid #475569;
             border-radius: 0 0 8px 8px;
-            max-height: 220px;
+            max-height: 200px;
             overflow-y: auto;
             z-index: 1000;
         }
@@ -82,13 +82,8 @@
         .suggestion-item:hover {
             background: #334155;
         }
-        .suggestion-category {
-            font-size: 10px;
+        .suggestion-item.history {
             color: #38bdf8;
-            text-transform: uppercase;
-            font-weight: bold;
-            padding: 4px 10px;
-            background: #111827;
         }
         /* Split View Layout */
         .split-view {
@@ -145,12 +140,12 @@
 <body>
 
     <div class="container">
-        <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Branch & History Finder</h3>
-        <p style="font-size: 12px; color: #94a3b8; text-align:center;">Maghanap ng Store Branch, Landmark, o tingnan ang iyong Search History.</p>
+        <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Split-View Finder</h3>
+        <p style="font-size: 12px; color: #94a3b8; text-align:center;">Hanapin ang establisyimento, negosyo, o i-click ang mapa para sa street view.</p>
 
         <!-- Search Input Bar -->
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="Mag-type ng store branch o address..." autocomplete="off">
+            <input type="text" id="addressInput" placeholder="Mag-type ng establishment, branch o address..." autocomplete="off">
             <button id="clearBtn" title="Burahin">✕</button>
             <div id="suggestions"></div>
         </div>
@@ -188,13 +183,29 @@
     <script>
         const ALPHABET = "23456789CFGHJMPQRVWX";
 
-        // 1. PRE-LOADED STORE & BUSINESS BRANCHES DIRECTORY (Dito mo ilalagay ang mga branches mo)
-        const storeBranches = [
-            { name: "Pico Bakehouse - Lucena Main", lat: 13.9350, lng: 121.6100, category: "Registered Business" },
-            { name: "ShareMap Kiosk Hub - SM Lucena Branch", lat: 13.9312, lng: 121.6135, category: "Store Branch" },
-            { name: "ShareMap Central Office - Pacific Mall", lat: 13.9401, lng: 121.6150, category: "Store Branch" },
-            { name: "Lucena Public Market Food Station", lat: 13.9370, lng: 121.6080, category: "Landmark" }
+        // Pre-registered Store Branches / Popular Local Establishments (para mabilis lumitaw)
+        const storeDirectory = [
+            { name: "Pico Bakehouse (Lucena Branch)", lat: 13.937800, lng: 121.606200, address: "Profugo St, Brgy. 5, Lucena City, Quezon" },
+            { name: "SM City Lucena", lat: 13.937400, lng: 121.613200, address: "Maharlika Highway, Lucena City" },
+            { name: "Pacific Mall Lucena", lat: 13.937000, lng: 121.614500, address: "Quezon Ave, Lucena City" }
         ];
+
+        function getSearchHistory() {
+            try {
+                return JSON.parse(localStorage.getItem('sharemap_search_history')) || [];
+            } catch(e) {
+                return [];
+            }
+        }
+
+        function saveToSearchHistory(item) {
+            let history = getSearchHistory();
+            // Alisin kung meron na para ilagay sa pinakataas
+            history = history.filter(h => h.name !== item.name);
+            history.unshift(item);
+            if (history.length > 10) history.pop(); // Max 10 items
+            localStorage.setItem('sharemap_search_history', JSON.stringify(history));
+        }
 
         function encodeStandardPlusCode(lat, lng) {
             lat = Math.min(Math.max(lat, -90), 90);
@@ -234,7 +245,7 @@
                     const a = data.address;
                     const houseNo = a.house_number || "";
                     const road = a.road || a.pedestrian || a.path || "";
-                    const suburb = a.suburb || a.neighbourhood || a.village || "";
+                    const suburb = a.suburb || a.neighbourhood || a.village || a.quarter || "";
                     const city = a.city || a.town || a.municipality || "";
                     const province = a.province || a.state || "";
                     const country = a.country || "";
@@ -248,7 +259,7 @@
             } catch (err) {
                 console.log("Reverse geocoding error:", err);
             }
-            return "Custom Pinned Location";
+            return "Hindi nakuha ang detalye ng address";
         }
 
         let currentLat = 13.9373;
@@ -281,32 +292,33 @@
             
             if (customDisplayName) {
                 document.getElementById('resTextAddr').innerText = customDisplayName;
-                saveSearchHistory(customDisplayName, lat, lng);
             } else {
                 document.getElementById('resTextAddr').innerText = "Kinukuha ang detalyadong address...";
                 const detailedAddr = await getStreetAddress(lat, lng);
                 document.getElementById('resTextAddr').innerText = detailedAddr;
-                saveSearchHistory(detailedAddr, lat, lng);
             }
         }
 
-        // 2. SEARCH HISTORY LOCALSTORAGE HANDLER
-        function saveSearchHistory(name, lat, lng) {
-            let history = JSON.parse(localStorage.getItem('sharemap_search_history') || '[]');
-            // Iwas duplicate
-            history = history.filter(item => item.name !== name);
-            history.unshift({ name, lat, lng });
-            if (history.length > 5) history.pop(); // Hanggang 5 huling search lang
-            localStorage.setItem('sharemap_search_history', JSON.stringify(history));
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    currentLat = position.coords.latitude;
+                    currentLng = position.coords.longitude;
+                    map.setView([currentLat, currentLng], 17);
+                    marker.setLatLng([currentLat, currentLng]);
+                    updateStreetView(currentLat, currentLng);
+                    updateDetails(currentLat, currentLng);
+                },
+                (error) => {
+                    updateStreetView(currentLat, currentLng);
+                    updateDetails(currentLat, currentLng, "Lucena City Center, Quezon, Philippines");
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        } else {
+            updateStreetView(currentLat, currentLng);
+            updateDetails(currentLat, currentLng, "Lucena City Center, Quezon, Philippines");
         }
-
-        function getSearchHistory() {
-            return JSON.parse(localStorage.getItem('sharemap_search_history') || '[]');
-        }
-
-        // Initial Load
-        updateStreetView(currentLat, currentLng);
-        updateDetails(currentLat, currentLng, "Lucena City Center, Quezon, Philippines");
 
         const addressInput = document.getElementById('addressInput');
         const clearBtn = document.getElementById('clearBtn');
@@ -315,7 +327,44 @@
         addressInput.addEventListener('input', function() {
             const query = this.value.trim();
             clearBtn.style.display = query.length > 0 ? "block" : "none";
+            
+            if (query.length === 0) {
+                showHistorySuggestions();
+            }
         });
+
+        // Kapag tinap ang input habang blangko, ipakita ang mga hinanap na noon (History)
+        addressInput.addEventListener('focus', function() {
+            if (this.value.trim().length === 0) {
+                showHistorySuggestions();
+            }
+        });
+
+        function showHistorySuggestions() {
+            const history = getSearchHistory();
+            if (history.length === 0) {
+                suggestionsBox.innerHTML = "";
+                return;
+            }
+
+            suggestionsBox.innerHTML = "<div style='padding: 6px 10px; font-size: 11px; color: #38bdf8; background: #0b0f19;'>🕒 Recent Searches / Saved Places:</div>";
+            history.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'suggestion-item history';
+                div.innerText = `⭐ ${item.name}`;
+                div.onclick = () => {
+                    addressInput.value = item.name;
+                    clearBtn.style.display = "block";
+                    suggestionsBox.innerHTML = "";
+
+                    map.setView([item.lat, item.lng], 17);
+                    marker.setLatLng([item.lat, item.lng]);
+                    updateStreetView(item.lat, item.lng);
+                    updateDetails(item.lat, item.lng, item.name);
+                };
+                suggestionsBox.appendChild(div);
+            });
+        }
 
         clearBtn.addEventListener('click', function() {
             addressInput.value = "";
@@ -327,100 +376,63 @@
         let debounceTimer;
         addressInput.addEventListener('input', function() {
             clearTimeout(debounceTimer);
-            const query = this.value.trim();
-            
-            if (query.length === 0) {
-                suggestionsBox.innerHTML = "";
-                return;
-            }
+            const query = this.value.trim().toLowerCase();
+            if (query.length < 2) return;
 
             debounceTimer = setTimeout(async () => {
                 suggestionsBox.innerHTML = "";
-                const queryLower = query.toLowerCase();
+                
+                // 1. Hanapin muna sa Pre-registered Store / Branch Directory
+                let matchedStores = storeDirectory.filter(s => s.name.toLowerCase().includes(query) || s.address.toLowerCase().includes(query));
+                
+                matchedStores.forEach(store => {
+                    const item = document.createElement('div');
+                    item.className = 'suggestion-item';
+                    item.style.color = '#4ade80';
+                    item.innerText = `🏢 [Store Branch] ${store.name} - ${store.address}`;
+                    item.onclick = () => {
+                        addressInput.value = store.name;
+                        clearBtn.style.display = "block";
+                        suggestionsBox.innerHTML = "";
 
-                // A. I-filter ang mga Branch mula sa Store Directory
-                const matchedBranches = storeBranches.filter(b => b.name.toLowerCase().includes(queryLower));
-                if (matchedBranches.length > 0) {
-                    const catHeader = document.createElement('div');
-                    catHeader.className = 'suggestion-category';
-                    catHeader.innerText = "🏢 Registered Branches & Businesses";
-                    suggestionsBox.appendChild(catHeader);
-
-                    matchedBranches.forEach(branch => {
-                        const item = document.createElement('div');
-                        item.className = 'suggestion-item';
-                        item.innerText = branch.name;
-                        item.onclick = () => {
-                            addressInput.value = branch.name;
-                            clearBtn.style.display = "block";
-                            suggestionsBox.innerHTML = "";
-                            map.setView([branch.lat, branch.lng], 17);
-                            marker.setLatLng([branch.lat, branch.lng]);
-                            updateStreetView(branch.lat, branch.lng);
-                            updateDetails(branch.lat, branch.lng, branch.name);
-                        };
-                        suggestionsBox.appendChild(item);
-                    });
-                }
-
-                // B. I-filter ang Search History ng User
-                const history = getSearchHistory().filter(h => h.name.toLowerCase().includes(queryLower));
-                if (history.length > 0) {
-                    const histHeader = document.createElement('div');
-                    histHeader.className = 'suggestion-category';
-                    histHeader.innerText = "🕒 Search History / Recent Pins";
-                    suggestionsBox.appendChild(histHeader);
-
-                    history.forEach(hist => {
-                        const item = document.createElement('div');
-                        item.className = 'suggestion-item';
-                        item.innerText = `📌 ${hist.name}`;
-                        item.onclick = () => {
-                            addressInput.value = hist.name;
-                            clearBtn.style.display = "block";
-                            suggestionsBox.innerHTML = "";
-                            map.setView([hist.lat, hist.lng], 17);
-                            marker.setLatLng([hist.lat, hist.lng]);
-                            updateStreetView(hist.lat, hist.lng);
-                            updateDetails(hist.lat, hist.lng, hist.name);
-                        };
-                        suggestionsBox.appendChild(item);
-                    });
-                }
-
-                // C. OpenStreetMap Search para sa iba pang general address
-                if (query.length >= 3) {
-                    try {
-                        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=4&q=${encodeURIComponent(query)}`);
-                        const data = await response.json();
+                        map.setView([store.lat, store.lng], 17);
+                        marker.setLatLng([store.lat, store.lng]);
+                        updateStreetView(store.lat, store.lng);
+                        updateDetails(store.lat, store.lng, `${store.name}, ${store.address}`);
                         
-                        if (data.length > 0) {
-                            const osmHeader = document.createElement('div');
-                            osmHeader.className = 'suggestion-category';
-                            osmHeader.innerText = "📍 OpenStreetMap Addresses";
-                            suggestionsBox.appendChild(osmHeader);
+                        saveToSearchHistory({ name: store.name, lat: store.lat, lng: store.lng });
+                    };
+                    suggestionsBox.appendChild(item);
+                });
 
-                            data.forEach(place => {
-                                const item = document.createElement('div');
-                                item.className = 'suggestion-item';
-                                item.innerText = place.display_name;
-                                item.onclick = () => {
-                                    const lat = parseFloat(place.lat);
-                                    const lng = parseFloat(place.lon);
-                                    addressInput.value = place.display_name;
-                                    clearBtn.style.display = "block";
-                                    suggestionsBox.innerHTML = "";
-                                    map.setView([lat, lng], 17);
-                                    marker.setLatLng([lat, lng]);
-                                    updateStreetView(lat, lng);
-                                    updateDetails(lat, lng, place.display_name);
-                                };
-                                suggestionsBox.appendChild(item);
-                            });
-                        }
-                    } catch (err) {
-                        console.error("OSM Search error:", err);
-                    }
+                // 2. Hanapin sa OpenStreetMap / Nominatim
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+                    
+                    data.forEach(place => {
+                        const item = document.createElement('div');
+                        item.className = 'suggestion-item';
+                        item.innerText = place.display_name;
+                        item.onclick = () => {
+                            const lat = parseFloat(place.lat);
+                            const lng = parseFloat(place.lon);
+                            
+                            addressInput.value = place.display_name;
+                            clearBtn.style.display = "block";
+                            suggestionsBox.innerHTML = "";
+
+                            map.setView([lat, lng], 17);
+                            marker.setLatLng([lat, lng]);
+                            updateStreetView(lat, lng);
+                            updateDetails(lat, lng, place.display_name);
+
+                            saveToSearchHistory({ name: place.display_name, lat: lat, lng: lng });
+                        };
+                        suggestionsBox.appendChild(item);
+                    });
+                } catch (err) {
+                    console.error("Search error:", err);
                 }
             }, 300);
         });
@@ -428,6 +440,7 @@
         map.on('click', function(e) {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
+            
             marker.setLatLng([lat, lng]);
             updateStreetView(lat, lng);
             updateDetails(lat, lng);
