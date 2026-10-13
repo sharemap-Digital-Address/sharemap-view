@@ -33,7 +33,7 @@
         }
         .search-box {
             position: relative;
-            margin-bottom: 8px;
+            margin-bottom: 15px;
             display: flex;
             align-items: center;
         }
@@ -94,17 +94,6 @@
             font-weight: bold;
             background: #0b2239;
         }
-        .helper-text {
-            font-size: 11px;
-            color: #94a3b8;
-            margin-bottom: 15px;
-            text-align: left;
-        }
-        .helper-text a {
-            color: #38bdf8;
-            text-decoration: underline;
-            cursor: pointer;
-        }
         /* Split View Layout */
         .split-view {
             display: flex;
@@ -162,16 +151,13 @@
 
     <div class="container">
         <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Split-View Finder</h3>
-        <p style="font-size: 12px; color: #94a3b8; text-align:center;">Hanapin ang establisyimento, negosyo, o i-click ang mapa para sa street view.</p>
+        <p style="font-size: 12px; color: #94a3b8; text-align:center;">I-type ang Plus Code, Address, o Establishment sa search bar.</p>
 
         <!-- Search Input Bar -->
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="Mag-type ng establishment, branch o Plus Code..." autocomplete="off">
+            <input type="text" id="addressInput" placeholder="Mag-type ng Plus Code, address, o establishment..." autocomplete="off">
             <button id="clearBtn" title="Burahin">✕</button>
             <div id="suggestions"></div>
-        </div>
-        <div class="helper-text">
-            💡 <b>Plus Code Support:</b> Pwede mong i-type o i-paste dito ang Plus Code (hal. <b>WHRV+69</b> o <b>7Q53WHRV+69</b>) o Google Maps link! <a onclick="promptManualCoord()">I-paste dito</a>
         </div>
 
         <!-- Split View Container -->
@@ -258,7 +244,9 @@
 
         async function getStreetAddress(lat, lng) {
             try {
-                const response = await openBlockNominatim(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+                    headers: { 'User-Agent': 'ShareMapDeliveryApp/1.0' }
+                });
                 const data = await response.json();
                 
                 if (data && data.address) {
@@ -280,10 +268,6 @@
                 console.log("Reverse geocoding error:", err);
             }
             return "Hindi nakuha ang detalye ng address";
-        }
-
-        async function openBlockNominatim(url) {
-            return await fetch(url, { headers: { 'User-Agent': 'ShareMapDeliveryApp/1.0' } });
         }
 
         let currentLat = 13.9373;
@@ -327,28 +311,28 @@
             }
         }
 
-        // Tagapamagitan para sa Plus Code, Coordinates, at Links gamit ang OLC Library
+        // Universal Parser para sa Plus Code (maikli o mahaba), Coordinates, at Address
         async function parseLocationInput(text) {
             text = text.trim();
             
-            // 1. Suriin kung ito ay Plus Code (naglalaman ng '+')
+            // 1. Plus Code Checker (kung may kasamang '+' sign)
             if (text.includes('+')) {
                 try {
-                    let fullCode = text;
-                    // Kung ito ay maikling code (tulad ng WHRV+69), i-recover gamit ang kasalukuyang Lucena reference center (13.93, 121.61)
-                    if (OpenLocationCode.isShort(text)) {
-                        fullCode = OpenLocationCode.recoverNearest(text, currentLat, currentLng);
+                    let cleanCode = text.split(',')[0].trim(); // Kunin ang Plus Code bago ang comma kung meron mang address
+                    let fullCode = cleanCode;
+                    if (OpenLocationCode.isShort(cleanCode)) {
+                        fullCode = OpenLocationCode.recoverNearest(cleanCode, currentLat, currentLng);
                     }
                     if (OpenLocationCode.isValid(fullCode)) {
                         const decoded = OpenLocationCode.decode(fullCode);
                         return { lat: decoded.latitudeCenter, lng: decoded.longitudeCenter, name: text };
                     }
                 } catch(e) {
-                    console.error("OLC decode error:", e);
+                    console.error("OLC error:", e);
                 }
             }
 
-            // 2. Suriin kung Geo Coordinates o Google Maps Link
+            // 2. Geo Coordinates o Google Maps Link Checker
             const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
             const match = text.match(coordRegex);
             if (match) {
@@ -360,32 +344,18 @@
                 return { lat: parseFloat(urlCoordMatch[1]), lng: parseFloat(urlCoordMatch[2]), name: text };
             }
 
-            // 3. I-query sa Nominatim kung normal text address
+            // 3. Nominatim Search para sa kumpletong Address (tulad ng Allarey cor Profugo St...)
             try {
-                const response = await openBlockNominatim(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(text)}`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(text)}`);
                 const data = await response.json();
                 if (data && data.length > 0) {
                     return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), name: data[0].display_name };
                 }
             } catch(e) {
-                console.error("Nominatim error:", e);
+                console.error("Nominatim search error:", e);
             }
-            return null;
-        }
 
-        async function promptManualCoord() {
-            const inputVal = prompt("I-paste dito ang Plus Code (hal. WHRV+69), Google Maps Link, o Coordinates:");
-            if (!inputVal) return;
-            const result = await parseLocationInput(inputVal);
-            if (result) {
-                map.setView([result.lat, result.lng], 17);
-                marker.setLatLng([result.lat, result.lng]);
-                updateStreetView(result.lat, result.lng);
-                updateDetails(result.lat, result.lng, result.name);
-                saveToSearchHistory({ name: inputVal, lat: result.lat, lng: result.lng });
-            } else {
-                alert("Hindi nabasa ang lokasyon. Subukang i-type ang buong Plus Code o coordinates.");
-            }
+            return null;
         }
 
         if (navigator.geolocation) {
@@ -437,39 +407,6 @@
             const query = this.value.trim();
             clearBtn.style.display = query.length > 0 ? "block" : "none";
             
-            // Real-time Plus Code check kung direktang tina-type sa search bar
-            if (query.includes('+') && query.length >= 4) {
-                try {
-                    let fullCode = query;
-                    if (OpenLocationCode.isShort(query)) {
-                        fullCode = OpenLocationCode.recoverNearest(query, currentLat, currentLng);
-                    }
-                    if (OpenLocationCode.isValid(fullCode)) {
-                        const decoded = OpenLocationCode.decode(fullCode);
-                        suggestionsBox.innerHTML = "";
-                        const item = document.createElement('div');
-                        item.className = 'suggestion-item';
-                        item.style.color = '#38bdf8';
-                        item.innerText = `📍 [Plus Code] ${query} (Mag-click para i-pin)`;
-                        item.onclick = () => {
-                            addressInput.value = query;
-                            clearBtn.style.display = "block";
-                            suggestionsBox.style.display = "none";
-
-                            map.setView([decoded.latitudeCenter, decoded.longitudeCenter], 17);
-                            marker.setLatLng([decoded.latitudeCenter, decoded.longitudeCenter]);
-                            updateStreetView(decoded.latitudeCenter, decoded.longitudeCenter);
-                            updateDetails(decoded.latitudeCenter, decoded.longitudeCenter, `Plus Code: ${query}`);
-
-                            saveToSearchHistory({ name: `Plus Code: ${query}`, lat: decoded.latitudeCenter, lng: decoded.longitudeCenter });
-                        };
-                        suggestionsBox.appendChild(item);
-                        suggestionsBox.style.display = "block";
-                        return;
-                    }
-                } catch(e) {}
-            }
-
             if (query.length === 0) {
                 suggestionsBox.innerHTML = "";
                 suggestionsBox.style.display = "none";
@@ -479,10 +416,42 @@
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(async () => {
                 suggestionsBox.innerHTML = "";
-                const lowerQuery = query.toLowerCase();
                 let hasResults = false;
+                const lowerQuery = query.toLowerCase();
 
-                // 1. FILTERED RECENT SEARCHES
+                // 1. SURIIN KUNG ITO AY PLUS CODE DIRECT CHECK (Instant suggestion)
+                if (query.includes('+') && query.length >= 4) {
+                    try {
+                        let cleanCode = query.split(',')[0].trim();
+                        let fullCode = cleanCode;
+                        if (OpenLocationCode.isShort(cleanCode)) {
+                            fullCode = OpenLocationCode.recoverNearest(cleanCode, currentLat, currentLng);
+                        }
+                        if (OpenLocationCode.isValid(fullCode)) {
+                            const decoded = OpenLocationCode.decode(fullCode);
+                            hasResults = true;
+                            const item = document.createElement('div');
+                            item.className = 'suggestion-item';
+                            item.style.color = '#38bdf8';
+                            item.innerText = `📍 [Plus Code] ${query}`;
+                            item.onclick = () => {
+                                addressInput.value = query;
+                                clearBtn.style.display = "block";
+                                suggestionsBox.style.display = "none";
+
+                                map.setView([decoded.latitudeCenter, decoded.longitudeCenter], 17);
+                                marker.setLatLng([decoded.latitudeCenter, decoded.longitudeCenter]);
+                                updateStreetView(decoded.latitudeCenter, decoded.longitudeCenter);
+                                updateDetails(decoded.latitudeCenter, decoded.longitudeCenter, `Plus Code: ${query}`);
+
+                                saveToSearchHistory({ name: query, lat: decoded.latitudeCenter, lng: decoded.longitudeCenter });
+                            };
+                            suggestionsBox.appendChild(item);
+                        }
+                    } catch(e) {}
+                }
+
+                // 2. FILTERED RECENT SEARCHES
                 const history = getSearchHistory();
                 const matchedHistory = history.filter(h => h.name.toLowerCase().includes(lowerQuery));
                 
@@ -511,7 +480,7 @@
                     });
                 }
 
-                // 2. FILTERED STORE BRANCHES
+                // 3. FILTERED STORE BRANCHES
                 let matchedStores = storeDirectory.filter(s => s.name.toLowerCase().includes(lowerQuery) || s.address.toLowerCase().includes(lowerQuery));
                 
                 if (matchedStores.length > 0) {
@@ -537,9 +506,9 @@
                     });
                 }
 
-                // 3. OPENSTREETMAP RESULTS
+                // 4. OPENSTREETMAP / NOMINATIM RESULTS (Nababasa na ang Allarey cor Profugo St, atbp.)
                 try {
-                    const response = await openBlockNominatim(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`);
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`);
                     const data = await response.json();
                     
                     if (data.length > 0) {
@@ -570,7 +539,7 @@
                     console.error("Search error:", err);
                 }
 
-                // 4. GOOGLE MAPS FALLBACK
+                // 5. GOOGLE MAPS FALLBACK
                 if (!hasResults) {
                     const gmapsItem = document.createElement('div');
                     gmapsItem.className = 'suggestion-item gmaps';
@@ -589,6 +558,24 @@
                     suggestionsBox.style.display = "none";
                 }
             }, 300);
+        });
+
+        // Pindutin ang Enter para tuwirang i-parse kung sakaling i-paste ang buong Plus Code o Address nang walang click
+        addressInput.addEventListener('keydown', async function(e) {
+            if (e.key === 'Enter') {
+                const query = this.value.trim();
+                if (query.length > 0) {
+                    const result = await parseLocationInput(query);
+                    if (result) {
+                        suggestionsBox.style.display = "none";
+                        map.setView([result.lat, result.lng], 17);
+                        marker.setLatLng([result.lat, result.lng]);
+                        updateStreetView(result.lat, result.lng);
+                        updateDetails(result.lat, result.lng, result.name);
+                        saveToSearchHistory({ name: query, lat: result.lat, lng: result.lng });
+                    }
+                }
+            }
         });
 
         map.on('click', function(e) {
