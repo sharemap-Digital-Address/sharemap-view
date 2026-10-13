@@ -163,12 +163,12 @@
 
         <!-- Search Input Bar -->
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="Mag-type ng establishment, branch, Plus Code o address..." autocomplete="off">
+            <input type="text" id="addressInput" placeholder="Mag-type ng establishment, branch o address..." autocomplete="off">
             <button id="clearBtn" title="Burahin">✕</button>
             <div id="suggestions"></div>
         </div>
         <div class="helper-text">
-            💡 Galing sa Google Maps? Pwede mong i-paste dito ang <b>Plus Code</b> (hal. <i>WJQ6+6JF</i>), <b>Google Maps Link</b>, o <b>Coordinates</b>! <a onclick="promptManualCoord()">I-paste dito</a>
+            💡 Galing sa Google Maps? Pwede mong i-paste ang <b>Google Maps Link</b>, <b>Plus Code</b> (hal. WJQ6+6JF), o <b>Geo Coordinates</b> dito! <a onclick="promptManualCoord()">I-paste dito</a>
         </div>
 
         <!-- Split View Container -->
@@ -322,57 +322,44 @@
             }
         }
 
-        // Tagapamagitan para sa pag-parse ng Geo Coordinates o Google Maps link
-        function extractCoordsFromText(text) {
+        // Tagapamagitan para sa Coordinates, Google Maps Link, o Plus Code conversion
+        async function parseLocationInput(text) {
+            text = text.trim();
+            // 1. Check kung Geo Coordinates (lat, lng) o galing sa link
             const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
             const match = text.match(coordRegex);
             if (match) {
                 return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
             }
+
+            // 2. Check kung Plus Code (hal. WJQ6+6JF o may kasamang address)
+            // Gamitin natin ang Nominatim para i-gecode ang Plus Code o text address mula sa Google Maps
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(text)}`);
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                }
+            } catch(e) {
+                console.error("Plus Code parse error:", e);
+            }
             return null;
         }
 
-        // Taga-handle kung Plus Code o Address ang ni-paste para i-convert gamit ang Nominatim
-        async function processCustomInput(inputStr) {
-            inputStr = inputStr.trim();
-            if (!inputStr) return;
-
-            // 1. Kung sakaling Lat/Lng o Maps Link ito
-            const coords = extractCoordsFromText(inputStr);
+        async function promptManualCoord() {
+            const inputVal = prompt("I-paste dito ang Google Maps Link, Plus Code, o Coordinates (lat, lng):");
+            if (!inputVal) return;
+            const coords = await parseLocationInput(inputVal);
             if (coords) {
                 map.setView([coords.lat, coords.lng], 17);
                 marker.setLatLng([coords.lat, coords.lng]);
                 updateStreetView(coords.lat, coords.lng);
-                updateDetails(coords.lat, coords.lng, "Custom Google Maps Pin");
+                updateDetails(coords.lat, coords.lng, "Imported Location: " + inputVal);
+                document.getElementById('addressInput').value = "Custom Google Maps Pin";
                 saveToSearchHistory({ name: "Custom Google Maps Pin", lat: coords.lat, lng: coords.lng });
-                return;
+            } else {
+                alert("Hindi nabasa ang lokasyon. Subukang i-paste ang buong Plus Code o coordinates.");
             }
-
-            // 2. Kung sakaling Plus Code (hal. WJQ6+6JF) o pangalan/address ang nilagay
-            try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(inputStr)}`);
-                const data = await response.json();
-                if (data && data.length > 0) {
-                    const lat = parseFloat(data[0].lat);
-                    const lng = parseFloat(data[0].lon);
-                    map.setView([lat, lng], 17);
-                    marker.setLatLng([lat, lng]);
-                    updateStreetView(lat, lng);
-                    updateDetails(lat, lng, data[0].display_name);
-                    saveToSearchHistory({ name: data[0].display_name, lat: lat, lng: lng });
-                } else {
-                    alert("Hindi natagpuan ang lokasyon o Plus Code na ito. Subukan itong hanapin sa Google Maps.");
-                }
-            } catch (err) {
-                console.error("Plus Code search error:", err);
-            }
-        }
-
-        function promptManualCoord() {
-            const inputVal = prompt("I-paste dito ang Plus Code (hal. WJQ6+6JF), Google Maps Link, o Coordinates (lat, lng):");
-            if (!inputVal) return;
-            processCustomInput(inputVal);
-            document.getElementById('addressInput').value = inputVal;
         }
 
         if (navigator.geolocation) {
@@ -424,18 +411,6 @@
             const query = this.value.trim();
             clearBtn.style.display = query.length > 0 ? "block" : "none";
             
-            // Check kung direct coords o Plus Code ang nilagay sa input
-            const directCoords = extractCoordsFromText(query);
-            if (directCoords) {
-                map.setView([directCoords.lat, directCoords.lng], 17);
-                marker.setLatLng([directCoords.lat, directCoords.lng]);
-                updateStreetView(directCoords.lat, directCoords.lng);
-                updateDetails(directCoords.lat, directCoords.lng, query);
-                saveToSearchHistory({ name: query, lat: directCoords.lat, lng: directCoords.lng });
-                suggestionsBox.style.display = "none";
-                return;
-            }
-
             if (query.length === 0) {
                 suggestionsBox.innerHTML = "";
                 suggestionsBox.style.display = "none";
@@ -557,6 +532,7 @@
             }, 300);
         });
 
+        // Kapag nag-click sa mapa
         map.on('click', function(e) {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
@@ -566,6 +542,7 @@
             updateDetails(lat, lng);
         });
 
+        // Kapag in-drag ang marker sa mapa
         marker.on('dragend', function(e) {
             const latLng = marker.getLatLng();
             updateStreetView(latLng.lat, latLng.lng);
