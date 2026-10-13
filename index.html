@@ -163,12 +163,12 @@
 
         <!-- Search Input Bar -->
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="Mag-type ng establishment, branch o address..." autocomplete="off">
+            <input type="text" id="addressInput" placeholder="Mag-type ng establishment, branch, Plus Code o address..." autocomplete="off">
             <button id="clearBtn" title="Burahin">✕</button>
             <div id="suggestions"></div>
         </div>
         <div class="helper-text">
-            💡 Galing sa Google Maps? Pwede mong i-paste dito ang <b>Google Maps Link</b> o <b>Geo Coordinates (lat,lng)</b> para direktang i-pin! <a onclick="promptManualCoord()">I-paste dito</a>
+            💡 Galing sa Google Maps? Pwede mong i-paste dito ang <b>Plus Code</b> (hal. <i>WJQ6+6JF</i>), <b>Google Maps Link</b>, o <b>Coordinates</b>! <a onclick="promptManualCoord()">I-paste dito</a>
         </div>
 
         <!-- Split View Container -->
@@ -322,9 +322,8 @@
             }
         }
 
-        // Tagapamagitan para i-parse kung sakaling Google Maps link o coordinates ang nilagay sa input
+        // Tagapamagitan para sa pag-parse ng Geo Coordinates o Google Maps link
         function extractCoordsFromText(text) {
-            // Halimbawa: @13.9378,121.6062 o kaya query link na ?q=13.9378,121.6062 o kaya simpleng "13.9378, 121.6062"
             const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
             const match = text.match(coordRegex);
             if (match) {
@@ -333,20 +332,47 @@
             return null;
         }
 
-        function promptManualCoord() {
-            const inputVal = prompt("I-paste dito ang Google Maps Link o Coordinates (lat, lng):");
-            if (!inputVal) return;
-            const coords = extractCoordsFromText(inputVal);
+        // Taga-handle kung Plus Code o Address ang ni-paste para i-convert gamit ang Nominatim
+        async function processCustomInput(inputStr) {
+            inputStr = inputStr.trim();
+            if (!inputStr) return;
+
+            // 1. Kung sakaling Lat/Lng o Maps Link ito
+            const coords = extractCoordsFromText(inputStr);
             if (coords) {
                 map.setView([coords.lat, coords.lng], 17);
                 marker.setLatLng([coords.lat, coords.lng]);
                 updateStreetView(coords.lat, coords.lng);
-                updateDetails(coords.lat, coords.lng, "Manually Imported from Google Maps");
-                document.getElementById('addressInput').value = "Custom Google Maps Pin";
+                updateDetails(coords.lat, coords.lng, "Custom Google Maps Pin");
                 saveToSearchHistory({ name: "Custom Google Maps Pin", lat: coords.lat, lng: coords.lng });
-            } else {
-                alert("Hindi nabasa ang coordinates. Siguraduhing may kasamang latitude at longitude ang link.");
+                return;
             }
+
+            // 2. Kung sakaling Plus Code (hal. WJQ6+6JF) o pangalan/address ang nilagay
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(inputStr)}`);
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lng = parseFloat(data[0].lon);
+                    map.setView([lat, lng], 17);
+                    marker.setLatLng([lat, lng]);
+                    updateStreetView(lat, lng);
+                    updateDetails(lat, lng, data[0].display_name);
+                    saveToSearchHistory({ name: data[0].display_name, lat: lat, lng: lng });
+                } else {
+                    alert("Hindi natagpuan ang lokasyon o Plus Code na ito. Subukan itong hanapin sa Google Maps.");
+                }
+            } catch (err) {
+                console.error("Plus Code search error:", err);
+            }
+        }
+
+        function promptManualCoord() {
+            const inputVal = prompt("I-paste dito ang Plus Code (hal. WJQ6+6JF), Google Maps Link, o Coordinates (lat, lng):");
+            if (!inputVal) return;
+            processCustomInput(inputVal);
+            document.getElementById('addressInput').value = inputVal;
         }
 
         if (navigator.geolocation) {
@@ -398,7 +424,7 @@
             const query = this.value.trim();
             clearBtn.style.display = query.length > 0 ? "block" : "none";
             
-            // Kung sakaling i-paste ng user ang Google Maps link/coordinates direkta sa search bar
+            // Check kung direct coords o Plus Code ang nilagay sa input
             const directCoords = extractCoordsFromText(query);
             if (directCoords) {
                 map.setView([directCoords.lat, directCoords.lng], 17);
