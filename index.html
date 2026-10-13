@@ -30,7 +30,7 @@
         }
         .search-box {
             position: relative;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
         }
@@ -90,6 +90,17 @@
             color: #38bdf8;
             font-weight: bold;
             background: #0b2239;
+        }
+        .helper-text {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        .helper-text a {
+            color: #38bdf8;
+            text-decoration: underline;
+            cursor: pointer;
         }
         /* Split View Layout */
         .split-view {
@@ -156,6 +167,9 @@
             <button id="clearBtn" title="Burahin">✕</button>
             <div id="suggestions"></div>
         </div>
+        <div class="helper-text">
+            💡 Galing sa Google Maps? Pwede mong i-paste dito ang <b>Google Maps Link</b> o <b>Geo Coordinates (lat,lng)</b> para direktang i-pin! <a onclick="promptManualCoord()">I-paste dito</a>
+        </div>
 
         <!-- Split View Container -->
         <div class="split-view">
@@ -190,7 +204,6 @@
     <script>
         const ALPHABET = "23456789CFGHJMPQRVWX";
 
-        // Pre-registered Store Branches / Popular Local Establishments
         const storeDirectory = [
             { name: "Pico Bakehouse (Lucena Branch)", lat: 13.937800, lng: 121.606200, address: "Profugo St, Brgy. 5, Lucena City, Quezon" },
             { name: "SM City Lucena", lat: 13.937400, lng: 121.613200, address: "Maharlika Highway, Lucena City" },
@@ -286,6 +299,8 @@
         }
 
         async function updateDetails(lat, lng, customDisplayName = null) {
+            currentLat = lat;
+            currentLng = lng;
             const plusCode = encodeStandardPlusCode(lat, lng);
             const mapLink = `https://maps.google.com/?q=${lat},${lng}`;
             const geoStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -304,6 +319,33 @@
                 document.getElementById('resTextAddr').innerText = "Kinukuha ang detalyadong address...";
                 const detailedAddr = await getStreetAddress(lat, lng);
                 document.getElementById('resTextAddr').innerText = detailedAddr;
+            }
+        }
+
+        // Tagapamagitan para i-parse kung sakaling Google Maps link o coordinates ang nilagay sa input
+        function extractCoordsFromText(text) {
+            // Halimbawa: @13.9378,121.6062 o kaya query link na ?q=13.9378,121.6062 o kaya simpleng "13.9378, 121.6062"
+            const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
+            const match = text.match(coordRegex);
+            if (match) {
+                return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            return null;
+        }
+
+        function promptManualCoord() {
+            const inputVal = prompt("I-paste dito ang Google Maps Link o Coordinates (lat, lng):");
+            if (!inputVal) return;
+            const coords = extractCoordsFromText(inputVal);
+            if (coords) {
+                map.setView([coords.lat, coords.lng], 17);
+                marker.setLatLng([coords.lat, coords.lng]);
+                updateStreetView(coords.lat, coords.lng);
+                updateDetails(coords.lat, coords.lng, "Manually Imported from Google Maps");
+                document.getElementById('addressInput').value = "Custom Google Maps Pin";
+                saveToSearchHistory({ name: "Custom Google Maps Pin", lat: coords.lat, lng: coords.lng });
+            } else {
+                alert("Hindi nabasa ang coordinates. Siguraduhing may kasamang latitude at longitude ang link.");
             }
         }
 
@@ -356,6 +398,18 @@
             const query = this.value.trim();
             clearBtn.style.display = query.length > 0 ? "block" : "none";
             
+            // Kung sakaling i-paste ng user ang Google Maps link/coordinates direkta sa search bar
+            const directCoords = extractCoordsFromText(query);
+            if (directCoords) {
+                map.setView([directCoords.lat, directCoords.lng], 17);
+                marker.setLatLng([directCoords.lat, directCoords.lng]);
+                updateStreetView(directCoords.lat, directCoords.lng);
+                updateDetails(directCoords.lat, directCoords.lng, query);
+                saveToSearchHistory({ name: query, lat: directCoords.lat, lng: directCoords.lng });
+                suggestionsBox.style.display = "none";
+                return;
+            }
+
             if (query.length === 0) {
                 suggestionsBox.innerHTML = "";
                 suggestionsBox.style.display = "none";
@@ -456,16 +510,12 @@
                     console.error("Search error:", err);
                 }
 
-                // 4. GOOGLE MAPS FALLBACK (Kung wala talagang mahanap sa OSM o Store Directory)
+                // 4. GOOGLE MAPS FALLBACK
                 if (!hasResults) {
                     const gmapsItem = document.createElement('div');
                     gmapsItem.className = 'suggestion-item gmaps';
                     gmapsItem.innerText = `🔍 Hanapin ang "${query}" sa Google Maps...`;
                     gmapsItem.onclick = () => {
-                        // I-save pansamantala sa history para pagbalik ay nakaabang
-                        saveToSearchHistory({ name: query + " (Google Maps)", lat: currentLat, lng: currentLng });
-                        
-                        // Buksan sa Google Maps app/web
                         window.open(`https://www.google.com/maps/search/${encodeURIComponent(query)}`, '_blank');
                         suggestionsBox.style.display = "none";
                     };
