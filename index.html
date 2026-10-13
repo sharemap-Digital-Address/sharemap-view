@@ -71,7 +71,8 @@
             border-radius: 0 0 8px 8px;
             max-height: 200px;
             overflow-y: auto;
-            z-index: 1000;
+            z-index: 9999; /* Siguraduhing laging nasa ibabaw */
+            display: none; /* Naka-hide by default */
         }
         .suggestion-item {
             padding: 10px;
@@ -99,6 +100,7 @@
             overflow: hidden;
             border: 1px solid #475569;
             background: #000;
+            position: relative;
         }
         #map {
             width: 100%;
@@ -183,7 +185,7 @@
     <script>
         const ALPHABET = "23456789CFGHJMPQRVWX";
 
-        // Pre-registered Store Branches / Popular Local Establishments (para mabilis lumitaw)
+        // Pre-registered Store Branches / Popular Local Establishments
         const storeDirectory = [
             { name: "Pico Bakehouse (Lucena Branch)", lat: 13.937800, lng: 121.606200, address: "Profugo St, Brgy. 5, Lucena City, Quezon" },
             { name: "SM City Lucena", lat: 13.937400, lng: 121.613200, address: "Maharlika Highway, Lucena City" },
@@ -200,10 +202,9 @@
 
         function saveToSearchHistory(item) {
             let history = getSearchHistory();
-            // Alisin kung meron na para ilagay sa pinakataas
             history = history.filter(h => h.name !== item.name);
             history.unshift(item);
-            if (history.length > 10) history.pop(); // Max 10 items
+            if (history.length > 10) history.pop();
             localStorage.setItem('sharemap_search_history', JSON.stringify(history));
         }
 
@@ -265,7 +266,10 @@
         let currentLat = 13.9373;
         let currentLng = 121.6171;
 
-        const map = L.map('map').setView([currentLat, currentLng], 15);
+        // INILIPAT SA TOP-RIGHT ANG ZOOM CONTROLS PARA HINDI MAKABALA SA SEARCH SUGGESTIONS
+        const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLng], 15);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
@@ -324,26 +328,10 @@
         const clearBtn = document.getElementById('clearBtn');
         const suggestionsBox = document.getElementById('suggestions');
 
-        addressInput.addEventListener('input', function() {
-            const query = this.value.trim();
-            clearBtn.style.display = query.length > 0 ? "block" : "none";
-            
-            if (query.length === 0) {
-                showHistorySuggestions();
-            }
-        });
-
-        // Kapag tinap ang input habang blangko, ipakita ang mga hinanap na noon (History)
-        addressInput.addEventListener('focus', function() {
-            if (this.value.trim().length === 0) {
-                showHistorySuggestions();
-            }
-        });
-
         function showHistorySuggestions() {
             const history = getSearchHistory();
             if (history.length === 0) {
-                suggestionsBox.innerHTML = "";
+                suggestionsBox.style.display = "none";
                 return;
             }
 
@@ -355,7 +343,7 @@
                 div.onclick = () => {
                     addressInput.value = item.name;
                     clearBtn.style.display = "block";
-                    suggestionsBox.innerHTML = "";
+                    suggestionsBox.style.display = "none";
 
                     map.setView([item.lat, item.lng], 17);
                     marker.setLatLng([item.lat, item.lng]);
@@ -364,26 +352,51 @@
                 };
                 suggestionsBox.appendChild(div);
             });
+            suggestionsBox.style.display = "block";
         }
+
+        addressInput.addEventListener('focus', function() {
+            if (this.value.trim().length === 0) {
+                showHistorySuggestions();
+            } else {
+                if (suggestionsBox.children.length > 0) {
+                    suggestionsBox.style.display = "block";
+                }
+            }
+        });
+
+        // I-hide ang suggestions kapag nawala ang focus o blangko na
+        addressInput.addEventListener('blur', function() {
+            // Naglalagay tayo ng kaunting timeout para ma-click muna ang item bago mag-hide
+            setTimeout(() => {
+                suggestionsBox.style.display = "none";
+            }, 200);
+        });
 
         clearBtn.addEventListener('click', function() {
             addressInput.value = "";
             clearBtn.style.display = "none";
-            suggestionsBox.innerHTML = "";
+            suggestionsBox.style.display = "none";
             addressInput.focus();
         });
 
         let debounceTimer;
         addressInput.addEventListener('input', function() {
-            clearTimeout(debounceTimer);
-            const query = this.value.trim().toLowerCase();
-            if (query.length < 2) return;
+            const query = this.value.trim();
+            clearBtn.style.display = query.length > 0 ? "block" : "none";
+            
+            if (query.length === 0) {
+                showHistorySuggestions();
+                return;
+            }
 
+            clearTimeout(debounceTimer);
             debounceTimer = setTimeout(async () => {
                 suggestionsBox.innerHTML = "";
+                const lowerQuery = query.toLowerCase();
                 
-                // 1. Hanapin muna sa Pre-registered Store / Branch Directory
-                let matchedStores = storeDirectory.filter(s => s.name.toLowerCase().includes(query) || s.address.toLowerCase().includes(query));
+                // 1. Hanapin sa Pre-registered Store / Branch Directory
+                let matchedStores = storeDirectory.filter(s => s.name.toLowerCase().includes(lowerQuery) || s.address.toLowerCase().includes(lowerQuery));
                 
                 matchedStores.forEach(store => {
                     const item = document.createElement('div');
@@ -393,7 +406,7 @@
                     item.onclick = () => {
                         addressInput.value = store.name;
                         clearBtn.style.display = "block";
-                        suggestionsBox.innerHTML = "";
+                        suggestionsBox.style.display = "none";
 
                         map.setView([store.lat, store.lng], 17);
                         marker.setLatLng([store.lat, store.lng]);
@@ -410,6 +423,11 @@
                     const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`);
                     const data = await response.json();
                     
+                    if (data.length === 0 && matchedStores.length === 0) {
+                        suggestionsBox.style.display = "none";
+                        return;
+                    }
+
                     data.forEach(place => {
                         const item = document.createElement('div');
                         item.className = 'suggestion-item';
@@ -420,7 +438,7 @@
                             
                             addressInput.value = place.display_name;
                             clearBtn.style.display = "block";
-                            suggestionsBox.innerHTML = "";
+                            suggestionsBox.style.display = "none";
 
                             map.setView([lat, lng], 17);
                             marker.setLatLng([lat, lng]);
@@ -434,6 +452,8 @@
                 } catch (err) {
                     console.error("Search error:", err);
                 }
+
+                suggestionsBox.style.display = "block";
             }, 300);
         });
 
