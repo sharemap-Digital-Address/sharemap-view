@@ -180,9 +180,9 @@
         <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Split-View Finder</h3>
         <p style="font-size: 12px; color: #94a3b8; text-align:center;">Maghanap gamit ang Plus Code o General Address.</p>
 
-        <!-- Dedikadong Plus Code Converter Box -->
+        <!-- Dedikadong Plus Code Converter Box na may Short Code Recovery -->
         <div class="pluscode-bar">
-            <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. 7Q53XJ55+RW)..." autocomplete="off">
+            <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. WHRV+69 o buong code)..." autocomplete="off">
             <button onclick="convertPlusCodeToGeo()">Convert to Geo</button>
         </div>
 
@@ -275,39 +275,6 @@
             return code;
         }
 
-        // Pure Math Standalone Decoder (Backup para sa OLC Library)
-        function decodePlusCodeMath(code) {
-            code = code.replace("+", "").toUpperCase();
-            if (code.length < 8) return null;
-
-            let latVal = 0, lngVal = 0;
-            let latPlace = 20, lngPlace = 20;
-
-            for (let i = 0; i < 8; i += 2) {
-                let d1 = ALPHABET.indexOf(code.charAt(i));
-                let d2 = ALPHABET.indexOf(code.charAt(i + 1));
-                if (d1 === -1 || d2 === -1) return null;
-                latVal += d1 * latPlace;
-                lngVal += d2 * lngPlace;
-                latPlace /= 20;
-                lngPlace /= 20;
-            }
-
-            if (code.length >= 10) {
-                let d1 = ALPHABET.indexOf(code.charAt(8));
-                let d2 = ALPHABET.indexOf(code.charAt(9));
-                if (d1 !== -1 && d2 !== -1) {
-                    latVal += d1 * (latPlace);
-                    lngVal += d2 * (lngPlace);
-                }
-            }
-
-            return {
-                lat: latVal - 90,
-                lng: lngVal - 180
-            };
-        }
-
         async function getStreetAddress(lat, lng) {
             try {
                 const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
@@ -385,56 +352,73 @@
             }
         }
 
-        // MATATAG NA CONVERTER: Basa pareho sa CDN Library at Math Fallback
-        function convertPlusCodeToGeo() {
-            let inputVal = document.getElementById('plusCodeInput').value.trim().toUpperCase();
-            const match = inputVal.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
-
-            if (!match) {
-                alert("Pakisigurong tama ang format ng Plus Code (hal. 7Q53XJ55+RW).");
+        // Tumpak na Plus Code Converter na may Short Code Recovery sa background
+        async function convertPlusCodeToGeo() {
+            let inputVal = document.getElementById('plusCodeInput').value.trim();
+            if (!inputVal) {
+                alert("Mag-type muna ng Plus Code.");
                 return;
             }
 
-            let code = match[0];
-            let lat = null, lng = null;
+            // 1. Kunin ang mismong Plus Code (e.g. WHRV+69 o 7Q53WJQ4+FG) mula sa input text
+            const match = inputVal.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
+            if (!match) {
+                alert("Hindi nakita ang wastong format ng Plus Code.");
+                return;
+            }
 
-            // Safe lookup para sa OpenLocationCode library instance
+            let code = match[0].toUpperCase();
+            let lat = null, lng = null;
             const olc = window.OpenLocationCode || window.openLocationCode;
 
             if (olc) {
                 try {
                     let fullCode = code;
-                    if (olc.isShort && olc.isShort(code)) {
-                        fullCode = olc.recoverNearest(code, currentLat, currentLng);
+
+                    // 2. Suriin kung may kasamang Town/Province o kung ito ay Short Code
+                    if (olc.isShort(code) || code.length < 10) {
+                        let referenceLat = currentLat;
+                        let referenceLng = currentLng;
+
+                        // Kung naglagay ng siyudad sa background text (tulad ng Lucena), hanapin muna ang coordinates nito gamit ang OSM
+                        let locationText = inputVal.replace(match[0], "").trim();
+                        if (locationText.length > 2) {
+                            try {
+                                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(locationText)}`);
+                                const geoData = await res.json();
+                                if (geoData && geoData.length > 0) {
+                                    referenceLat = parseFloat(geoData[0].lat);
+                                    referenceLng = parseFloat(geoData[0].lon);
+                                }
+                            } catch(err) {
+                                console.log("Reference location fetch warning:", err);
+                            }
+                        }
+
+                        // 3. I-recover ang buong code sa background (e.g. nagiging 7Q53WHRV+69)
+                        fullCode = olc.recoverNearest(code, referenceLat, referenceLng);
                     }
+
+                    // 4. I-decode ang buong code patungong Geo coordinates
                     let decoded = olc.decode(fullCode);
                     if (decoded) {
                         lat = decoded.latitudeCenter;
                         lng = decoded.longitudeCenter;
                     }
-                } catch(err) {
-                    console.log("OLC CDN library failed, switching to math decoder...", err);
-                }
-            }
-
-            // Fallback decoding kung may isyu sa CDN
-            if (lat === null || lng === null) {
-                let mathDecoded = decodePlusCodeMath(code);
-                if (mathDecoded) {
-                    lat = mathDecoded.lat;
-                    lng = mathDecoded.lng;
+                } catch(e) {
+                    console.error("OLC Recovery Error:", e);
                 }
             }
 
             if (lat !== null && lng !== null) {
                 let geoString = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
-                // Isulat ang geo result sa OpenStreetMap search bar
+                // Isulat sa search bar ang katumbas na geo result
                 const addressInput = document.getElementById('addressInput');
                 addressInput.value = geoString;
                 document.getElementById('clearBtn').style.display = "block";
 
-                // Jump sa map
+                // Jump sa map at i-update ang details
                 map.setView([lat, lng], 17);
                 marker.setLatLng([lat, lng]);
                 updateStreetView(lat, lng);
@@ -442,7 +426,7 @@
 
                 saveToSearchHistory({ name: `Plus Code: ${code}`, lat: lat, lng: lng });
             } else {
-                alert("Hindi nabasa ang Plus Code format.");
+                alert("Hindi nabasa o na-recover ang Plus Code.");
             }
         }
 
@@ -507,7 +491,6 @@
                 return;
             }
 
-            // Kung ang tinype sa search bar ay Geo Coordinates (hal. 13.959590, 121.609863)
             const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
             const match = query.match(coordRegex);
             if (match) {
