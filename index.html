@@ -6,23 +6,30 @@
 <title>ShareMap Split-View Finder</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0f172a;color:#fff;margin:0;padding:15px;display:flex;justify-content:center}
-.container{max-width:650px;width:100%;background:#1e293b;padding:15px;border-radius:12px;box-shadow:0 4px 15px #0006}
-h3{text-align:center;margin-top:0}.muted{font-size:13px;color:#94a3b8;text-align:center}
-.pluscode-container { position: relative; margin: 12px 0; }
-.search-container { position: relative; margin: 12px 0; }
-.bar{display:flex;gap:8px;position:relative}
-input{min-width:0;flex:1;padding:12px;border-radius:8px;border:1px solid #38bdf8;background:#0f172a;color:white;font-size:15px}
-button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius:8px;font-weight:bold;cursor:pointer}
-#status{display:none;padding:10px;margin:8px 0 14px;border:1px solid #475569;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0f172a;color:#fff;margin:0;padding:10px;display:flex;justify-content:center}
+.container{max-width:650px;width:100%;background:#1e293b;padding:12px;border-radius:12px;box-shadow:0 4px 15px #0006}
+h3{text-align:center;margin:5px 0;font-size:18px}.muted{font-size:12px;color:#94a3b8;text-align:center;margin-bottom:10px}
+.pluscode-container { position: relative; margin: 10px 0; }
+.search-container { position: relative; margin: 10px 0; }
+.bar{display:flex;gap:6px;position:relative;align-items:center}
+.input-wrapper { position: relative; display: flex; flex: 1; align-items: center; }
+input{width:100%;padding:12px 35px 12px 12px;border-radius:8px;border:1px solid #38bdf8;background:#0f172a;color:white;font-size:15px;outline:none}
+input:focus{border-color:#38bdf8}
+.clear-btn { position: absolute; right: 10px; background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; display: none; padding: 0; line-height: 1; }
+.clear-btn:hover { color: #fff; }
+button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}
+#status{display:none;padding:8px;margin:6px 0;border:1px solid #475569;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 #status.error{display:block;color:#fca5a5;border-color:#f87171}#status.ok{display:block;color:#86efac;border-color:#4ade80}#status.info{display:block;color:#bae6fd}
-.info-label{font-size:14px;color:#38bdf8;font-weight:bold;margin:14px 0 6px}.pane{height:240px;border-radius:8px;overflow:hidden;border:1px solid #475569;background:#111827}#map{width:100%;height:100%}iframe{width:100%;height:100%;border:0}
-.result{margin-top:15px;padding:12px;background:#0f172a;border:1px solid #475569;border-radius:8px;font-size:13px;overflow-wrap:anywhere}.item{margin:8px 0}.item span{color:#94a3b8}.result a{color:#38bdf8}
-.small{font-size:12px;color:#94a3b8;line-height:1.5}
-.suggestions{display:none;position:absolute;left:0;right:0;top:100%;z-index:9999;background:#0f172a;border:1px solid #38bdf8;max-height:180px;overflow:auto}
+.info-label{font-size:13px;color:#38bdf8;font-weight:bold;margin:10px 0 4px}
+/* Pinalaking pane height para mas komportable sa mobile smartphone */
+.pane{height:280px;border-radius:8px;overflow:hidden;border:1px solid #475569;background:#111827}
+#map{width:100%;height:100%}iframe{width:100%;height:100%;border:0}
+.result{margin-top:12px;padding:10px;background:#0f172a;border:1px solid #475569;border-radius:8px;font-size:12px;overflow-wrap:anywhere}.item{margin:6px 0}.item span{color:#94a3b8}.result a{color:#38bdf8}
+.small{font-size:11px;color:#94a3b8;line-height:1.4;margin-top:10px}
+.suggestions{display:none;position:absolute;left:0;right:0;top:100%;z-index:9999;background:#0f172a;border:1px solid #38bdf8;max-height:180px;overflow:auto;border-radius:0 0 8px 8px}
 .suggestion{padding:10px;border-bottom:1px solid #334155;cursor:pointer;font-size:13px}
 .suggestion:hover{background:#334155}
-@media(max-width:440px){.bar{flex-direction:column}.bar button{min-height:42px}.pane{height:220px}}
+@media(max-width:440px){.bar{flex-direction:row}.pane{height:260px}}
 </style>
 <script src="./openlocationcode.js"></script>
 <script src="./location-search.js"></script>
@@ -32,21 +39,27 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
 <h3>🗺️ ShareMap Split-View Finder</h3>
 <p class="muted">Maghanap gamit ang Plus Code o general address.</p>
 
-<!-- Plus Code Input na may Real-time Suggestions -->
+<!-- Plus Code Input na may Clear Button at Suggestions -->
 <div class="pluscode-container">
     <div class="bar">
-        <input id="plusCodeInput" value="WHRV+69 Lucena City, Quezon" placeholder="Plus Code, hal. WHRV+69 Lucena City, Quezon" autocomplete="off">
-        <button id="convertBtn">Convert to Geo</button>
+        <div class="input-wrapper">
+            <input id="plusCodeInput" value="WHRV+69 Lucena City, Quezon" placeholder="Plus Code, hal. WHRV+69 Lucena City" autocomplete="off">
+            <button type="button" id="clearPlusBtn" class="clear-btn" title="Burahin">✕</button>
+        </div>
+        <button id="convertBtn">Convert</button>
     </div>
     <div id="plusCodeSuggestions" class="suggestions"></div>
 </div>
 
 <div id="status" role="status"></div>
 
-<!-- General Search Input na may OpenStreetMap Suggestions -->
+<!-- General Address Input na may Clear Button at OSM Suggestions -->
 <div class="search-container">
     <div class="bar">
-        <input id="addressInput" placeholder="Mag-type ng address o latitude, longitude" autocomplete="off">
+        <div class="input-wrapper">
+            <input id="addressInput" placeholder="Mag-type ng address o lat, lng" autocomplete="off">
+            <button type="button" id="clearAddressBtn" class="clear-btn" title="Burahin">✕</button>
+        </div>
         <button id="searchBtn">Search</button>
     </div>
     <div id="addressSuggestions" class="suggestions"></div>
@@ -66,7 +79,7 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
 <div class="item"><span>Text Address:</span> <strong id="resTextAddr">—</strong></div>
 </section>
 
-<p class="small">Plus Code engine and reference-centre starter data are loaded from local repository files[span_2](start_span)[span_2](end_span). Place-name lookup for locations not in the starter list still requires internet[span_3](start_span)[span_3](end_span). Map tiles, reverse geocoding and Street View also require internet[span_4](start_span)[span_4](end_span).</p>
+<p class="small">Plus Code engine and reference-centre starter data are loaded from local repository files[span_0](start_span)[span_0](end_span). Place-name lookup for locations not in the starter list still requires internet[span_1](start_span)[span_1](end_span). Map tiles, reverse geocoding and Street View also require internet[span_2](start_span)[span_2](end_span).</p>
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -166,18 +179,26 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
       if (!validCoords(area.latitudeCenter, area.longitudeCenter)) throw new Error("Hindi valid ang coordinates mula sa Plus Code.");
       
       $("plusCodeInput").value = full;
+      $("clearPlusBtn").style.display = "block";
       await setLocation(area.latitudeCenter, area.longitudeCenter, "Plus Code " + full);
     } catch(e) {
       showStatus("⚠️ " + (e && e.message ? e.message : "Hindi na-convert ang Plus Code."), "error");
     }
   }
 
-  // PLUS CODE REAL-TIME ONSUGGESTION
+  // PLUS CODE INPUT & CLEAR BUTTON LOGIC
   const plusCodeInput = $("plusCodeInput");
+  const clearPlusBtn = $("clearPlusBtn");
   const plusCodeSuggestions = $("plusCodeSuggestions");
   let debouncePlusCodeTimer;
 
+  function toggleClearButtons() {
+    clearPlusBtn.style.display = plusCodeInput.value.length > 0 ? "block" : "none";
+    clearAddressBtn.style.display = addressInput.value.length > 0 ? "block" : "none";
+  }
+
   plusCodeInput.addEventListener("input", function() {
+    toggleClearButtons();
     const query = this.value.trim();
     plusCodeSuggestions.innerHTML = "";
     
@@ -209,6 +230,7 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
             item.innerHTML = `💡 I-click para gamitin: <strong>${recoveredFull}</strong>`;
             item.onclick = () => {
               plusCodeInput.value = recoveredFull;
+              toggleClearButtons();
               plusCodeSuggestions.style.display = "none";
             };
             plusCodeSuggestions.appendChild(item);
@@ -223,12 +245,21 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
     }, 300);
   });
 
-  // GENERAL ADDRESS REAL-TIME ONSUGGESTION (OSM NOMINATIM)
+  clearPlusBtn.addEventListener("click", () => {
+    plusCodeInput.value = "";
+    clearPlusBtn.style.display = "none";
+    plusCodeSuggestions.style.display = "none";
+    plusCodeInput.focus();
+  });
+
+  // GENERAL ADDRESS INPUT & CLEAR BUTTON LOGIC
   const addressInput = $("addressInput");
+  const clearAddressBtn = $("clearAddressBtn");
   const addressSuggestions = $("addressSuggestions");
   let debounceAddressTimer;
 
   addressInput.addEventListener("input", function() {
+    toggleClearButtons();
     const query = this.value.trim();
     addressSuggestions.innerHTML = "";
 
@@ -252,6 +283,7 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
             item.textContent = place.display_name;
             item.onclick = async () => {
               addressInput.value = place.display_name;
+              toggleClearButtons();
               addressSuggestions.style.display = "none";
               const lat = Number(place.lat);
               const lng = Number(place.lon);
@@ -269,6 +301,13 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
         console.error("Nominatim search error:", err);
       }
     }, 350);
+  });
+
+  clearAddressBtn.addEventListener("click", () => {
+    addressInput.value = "";
+    clearAddressBtn.style.display = "none";
+    addressSuggestions.style.display = "none";
+    addressInput.focus();
   });
 
   document.addEventListener("click", function(e) {
@@ -314,6 +353,8 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:10px 14px;border-radius
     updateDetails(p.lat, p.lng);
   });
 
+  // Inicialisasyon at pag-check ng clear button sa simula kung may laman na ang input
+  toggleClearButtons();
   updateStreetView(currentLat, currentLng); 
   updateDetails(currentLat, currentLng, "Lucena City Center, Quezon, Philippines");
 })();
