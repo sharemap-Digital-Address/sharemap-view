@@ -182,7 +182,7 @@
 
         <!-- Dedikadong Plus Code Converter Box -->
         <div class="pluscode-bar">
-            <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. 7Q53WJQ4+FG)..." autocomplete="off">
+            <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. 7Q53XJ55+RW)..." autocomplete="off">
             <button onclick="convertPlusCodeToGeo()">Convert to Geo</button>
         </div>
 
@@ -275,6 +275,39 @@
             return code;
         }
 
+        // Pure Math Standalone Decoder (Backup para sa OLC Library)
+        function decodePlusCodeMath(code) {
+            code = code.replace("+", "").toUpperCase();
+            if (code.length < 8) return null;
+
+            let latVal = 0, lngVal = 0;
+            let latPlace = 20, lngPlace = 20;
+
+            for (let i = 0; i < 8; i += 2) {
+                let d1 = ALPHABET.indexOf(code.charAt(i));
+                let d2 = ALPHABET.indexOf(code.charAt(i + 1));
+                if (d1 === -1 || d2 === -1) return null;
+                latVal += d1 * latPlace;
+                lngVal += d2 * lngPlace;
+                latPlace /= 20;
+                lngPlace /= 20;
+            }
+
+            if (code.length >= 10) {
+                let d1 = ALPHABET.indexOf(code.charAt(8));
+                let d2 = ALPHABET.indexOf(code.charAt(9));
+                if (d1 !== -1 && d2 !== -1) {
+                    latVal += d1 * (latPlace);
+                    lngVal += d2 * (lngPlace);
+                }
+            }
+
+            return {
+                lat: latVal - 90,
+                lng: lngVal - 180
+            };
+        }
+
         async function getStreetAddress(lat, lng) {
             try {
                 const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
@@ -352,50 +385,64 @@
             }
         }
 
-        // BAGONG FEATURE: I-convert ang Plus Code sa Geo Coordinates at ilagay sa Search Bar
+        // MATATAG NA CONVERTER: Basa pareho sa CDN Library at Math Fallback
         function convertPlusCodeToGeo() {
             let inputVal = document.getElementById('plusCodeInput').value.trim().toUpperCase();
-            
-            try {
-                // Alisin ang mga spaces o dagdag na letra
-                const match = inputVal.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
-                if (!match) {
-                    alert("Pakisigurong tama ang format ng Plus Code (hal. 7Q53WJQ4+FG).");
-                    return;
+            const match = inputVal.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
+
+            if (!match) {
+                alert("Pakisigurong tama ang format ng Plus Code (hal. 7Q53XJ55+RW).");
+                return;
+            }
+
+            let code = match[0];
+            let lat = null, lng = null;
+
+            // Safe lookup para sa OpenLocationCode library instance
+            const olc = window.OpenLocationCode || window.openLocationCode;
+
+            if (olc) {
+                try {
+                    let fullCode = code;
+                    if (olc.isShort && olc.isShort(code)) {
+                        fullCode = olc.recoverNearest(code, currentLat, currentLng);
+                    }
+                    let decoded = olc.decode(fullCode);
+                    if (decoded) {
+                        lat = decoded.latitudeCenter;
+                        lng = decoded.longitudeCenter;
+                    }
+                } catch(err) {
+                    console.log("OLC CDN library failed, switching to math decoder...", err);
                 }
+            }
 
-                let code = match[0];
-                let fullCode = code;
-
-                // Kung maikling code, i-recover gamit ang kasalukuyang center
-                if (OpenLocationCode.isShort(code)) {
-                    fullCode = OpenLocationCode.recoverNearest(code, currentLat, currentLng);
+            // Fallback decoding kung may isyu sa CDN
+            if (lat === null || lng === null) {
+                let mathDecoded = decodePlusCodeMath(code);
+                if (mathDecoded) {
+                    lat = mathDecoded.lat;
+                    lng = mathDecoded.lng;
                 }
+            }
 
-                if (OpenLocationCode.isValid(fullCode)) {
-                    let decoded = OpenLocationCode.decode(fullCode);
-                    let lat = decoded.latitudeCenter;
-                    let lng = decoded.longitudeCenter;
-                    let geoString = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            if (lat !== null && lng !== null) {
+                let geoString = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
-                    // Isulat ang geo result sa OpenStreetMap search bar
-                    const addressInput = document.getElementById('addressInput');
-                    addressInput.value = geoString;
-                    document.getElementById('clearBtn').style.display = "block";
+                // Isulat ang geo result sa OpenStreetMap search bar
+                const addressInput = document.getElementById('addressInput');
+                addressInput.value = geoString;
+                document.getElementById('clearBtn').style.display = "block";
 
-                    // Direktang ilipat ang map at marker
-                    map.setView([lat, lng], 17);
-                    marker.setLatLng([lat, lng]);
-                    updateStreetView(lat, lng);
-                    updateDetails(lat, lng, `Plus Code: ${code} (${geoString})`);
-                    
-                    saveToSearchHistory({ name: `Plus Code: ${code}`, lat: lat, lng: lng });
-                } else {
-                    alert("Hindi wastong Plus Code.");
-                }
-            } catch(e) {
-                console.error(e);
-                alert("May naganap na error sa pagbasa ng Plus Code.");
+                // Jump sa map
+                map.setView([lat, lng], 17);
+                marker.setLatLng([lat, lng]);
+                updateStreetView(lat, lng);
+                updateDetails(lat, lng, `Plus Code: ${code} (${geoString})`);
+
+                saveToSearchHistory({ name: `Plus Code: ${code}`, lat: lat, lng: lng });
+            } else {
+                alert("Hindi nabasa ang Plus Code format.");
             }
         }
 
