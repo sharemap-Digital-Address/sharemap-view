@@ -281,16 +281,14 @@
                 .trim();
         }
 
-        // Dedicated Plus Code Extractor gamit ang OLC Library
+        // Local Plus Code Decoder gamit ang OLC Library (Hindi na dadaan sa OSM!)
         function parsePlusCode(text) {
             try {
-                // Regular expression para hanapin ang Plus Code format (e.g. WHRV+69 o 7Q53WJQ4+CG)
                 const match = text.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
                 if (match) {
                     let code = match[0].toUpperCase();
                     let fullCode = code;
 
-                    // Kung maikling code (tulad ng WHRV+69), i-recover gamit ang kasalukuyang Lucena center
                     if (OpenLocationCode.isShort(code)) {
                         fullCode = OpenLocationCode.recoverNearest(code, currentLat, currentLng);
                     }
@@ -350,20 +348,20 @@
         async function searchAddress(query) {
             query = query.trim();
 
-            // 1. Subukang basahin bilang Plus Code
+            // 1. Plus Code Local Decode
             const plusResult = parsePlusCode(query);
             if (plusResult) {
                 return { lat: plusResult.lat, lng: plusResult.lng, name: query };
             }
 
-            // 2. Geo Coordinates Check (lat, lng)
+            // 2. Geo Coordinates Check
             const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
             const match = query.match(coordRegex);
             if (match) {
                 return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), name: query };
             }
 
-            // 3. OpenStreetMap Search
+            // 3. OpenStreetMap Search para sa regular text address
             const cleanedQuery = cleanGoogleAddress(query);
             try {
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(cleanedQuery)}`);
@@ -437,13 +435,13 @@
                 let hasResults = false;
                 const lowerQuery = query.toLowerCase();
 
-                // 1. PLUS CODE REAL-TIME CHECK
+                // 1. PLUS CODE LOCAL CHECK (Agad lalabas ang suggestion nang hindi na umaasa sa OSM)
                 const plusResult = parsePlusCode(query);
                 if (plusResult) {
                     hasResults = true;
                     const item = document.createElement('div');
                     item.className = 'suggestion-item pluscode';
-                    item.innerText = `📍 [Plus Code] ${query}`;
+                    item.innerText = `📍 [Plus Code Match] ${query}`;
                     item.onclick = () => {
                         addressInput.value = query;
                         clearBtn.style.display = "block";
