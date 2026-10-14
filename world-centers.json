@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "note": "Starter reference-centre dataset only; not a complete world gazetteer. Online geocoding is used as fallback for other place names.",
+  "locations": [
+    {
+      "name": "Lucena City, Quezon, Philippines",
+      "aliases": [
+        "Lucena City",
+        "Lucena",
+        "Quezon, Philippines"
+      ],
+      "lat": 13.9411,
+      "lng": 121.623
+    },
+    {
+      "name": "Manila, Philippines",
+      "aliases": [
+        "Manila",
+        "Metro Manila"
+      ],
+      "lat": 14.5995,
+      "lng": 120.9842
+    },
+    {
+      "name": "Quezon City, Philippines",
+      "aliases": [
+        "Quezon City"
+      ],
+      "lat": 14.676,
+      "lng": 121.0437
+    },
+    {
+      "name": "Cebu City, Philippines",
+      "aliases": [
+        "Cebu City",
+        "Cebu"
+      ],
+      "lat": 10.3157,
+      "lng": 123.8854
+    },
+    {
+      "name": "Davao City, Philippines",
+      "aliases": [
+        "Davao City",
+        "Davao"
+      ],
+      "lat": 7.1907,
+      "lng": 125.4553
+    },
+    {
+      "name": "Singapore",
+      "aliases": [
+        "Singapore"
+      ],
+      "lat": 1.3521,
+      "lng": 103.8198
+    },
+    {
+      "name": "Tokyo, Japan",
+      "aliases": [
+        "Tokyo"
+      ],
+      "lat": 35.6762,
+      "lng": 139.6503
+    },
+    {
+      "name": "London, United Kingdom",
+      "aliases": [
+        "London"
+      ],
+      "lat": 51.5072,
+      "lng": -0.1276
+    },
+    {
+      "name": "New York City, USA",
+      "aliases": [
+        "New York",
+        "New York City",
+        "NYC"
+      ],
+      "lat": 40.7128,
+      "lng": -74.006
+    },
+    {
+      "name": "Sydney, Australia",
+      "aliases": [
+        "Sydney"
+      ],
+      "lat": -33.8688,
+      "lng": 151.2093
+    }
+  ]
+}
