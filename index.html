@@ -180,10 +180,10 @@
         <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Split-View Finder</h3>
         <p style="font-size: 12px; color: #94a3b8; text-align:center;">Maghanap gamit ang Plus Code o General Address.</p>
 
-        <!-- Dedikadong Plus Code Quick Search Box -->
+        <!-- Dedikadong Plus Code Converter Box -->
         <div class="pluscode-bar">
-            <input type="text" id="plusCodeInput" placeholder="Ilagay ang Plus Code dito (e.g. 7Q53WJQ4+FG)..." autocomplete="off">
-            <button onclick="handlePlusCodeSearch()">Go to Plus Code</button>
+            <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. 7Q53WJQ4+FG)..." autocomplete="off">
+            <button onclick="convertPlusCodeToGeo()">Convert to Geo</button>
         </div>
 
         <!-- General Search Input Bar -->
@@ -311,34 +311,6 @@
                 .trim();
         }
 
-        // Pinahusay at mas maluwag na Plus Code Decoder
-        function decodeAndJumpPlusCode(query) {
-            try {
-                query = query.trim().toUpperCase();
-                // Alisin ang mga hindi kailangang salita kung sakaling may kasamang address
-                const match = query.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
-                
-                if (match) {
-                    let code = match[0];
-                    let fullCode = code;
-
-                    // I-recover kung maikling code ito gamit ang kasalukuyang lat/lng center
-                    if (OpenLocationCode.isShort(code)) {
-                        fullCode = OpenLocationCode.recoverNearest(code, currentLat, currentLng);
-                    }
-
-                    // Direktang i-decode nang hindi na nagpapakita ng false strict error
-                    const decoded = OpenLocationCode.decode(fullCode);
-                    if (decoded) {
-                        return { lat: decoded.latitudeCenter, lng: decoded.longitudeCenter, code: code };
-                    }
-                }
-            } catch(e) {
-                console.error("OLC Parse Error:", e);
-            }
-            return null;
-        }
-
         let currentLat = 13.9373;
         let currentLng = 121.6171;
 
@@ -380,23 +352,56 @@
             }
         }
 
-        function handlePlusCodeSearch() {
-            const inputVal = document.getElementById('plusCodeInput').value;
-            const result = decodeAndJumpPlusCode(inputVal);
-            if (result) {
-                map.setView([result.lat, result.lng], 17);
-                marker.setLatLng([result.lat, result.lng]);
-                updateStreetView(result.lat, result.lng);
-                updateDetails(result.lat, result.lng, `Plus Code: ${result.code}`);
-                saveToSearchHistory({ name: `Plus Code: ${result.code}`, lat: result.lat, lng: result.lng });
-            } else {
-                alert("Hindi nabasa ang Plus Code. Pakisigurong tama ang format (hal. 7Q53WJQ4+FG).");
+        // BAGONG FEATURE: I-convert ang Plus Code sa Geo Coordinates at ilagay sa Search Bar
+        function convertPlusCodeToGeo() {
+            let inputVal = document.getElementById('plusCodeInput').value.trim().toUpperCase();
+            
+            try {
+                // Alisin ang mga spaces o dagdag na letra
+                const match = inputVal.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
+                if (!match) {
+                    alert("Pakisigurong tama ang format ng Plus Code (hal. 7Q53WJQ4+FG).");
+                    return;
+                }
+
+                let code = match[0];
+                let fullCode = code;
+
+                // Kung maikling code, i-recover gamit ang kasalukuyang center
+                if (OpenLocationCode.isShort(code)) {
+                    fullCode = OpenLocationCode.recoverNearest(code, currentLat, currentLng);
+                }
+
+                if (OpenLocationCode.isValid(fullCode)) {
+                    let decoded = OpenLocationCode.decode(fullCode);
+                    let lat = decoded.latitudeCenter;
+                    let lng = decoded.longitudeCenter;
+                    let geoString = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+                    // Isulat ang geo result sa OpenStreetMap search bar
+                    const addressInput = document.getElementById('addressInput');
+                    addressInput.value = geoString;
+                    document.getElementById('clearBtn').style.display = "block";
+
+                    // Direktang ilipat ang map at marker
+                    map.setView([lat, lng], 17);
+                    marker.setLatLng([lat, lng]);
+                    updateStreetView(lat, lng);
+                    updateDetails(lat, lng, `Plus Code: ${code} (${geoString})`);
+                    
+                    saveToSearchHistory({ name: `Plus Code: ${code}`, lat: lat, lng: lng });
+                } else {
+                    alert("Hindi wastong Plus Code.");
+                }
+            } catch(e) {
+                console.error(e);
+                alert("May naganap na error sa pagbasa ng Plus Code.");
             }
         }
 
         document.getElementById('plusCodeInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
-                handlePlusCodeSearch();
+                convertPlusCodeToGeo();
             }
         });
 
@@ -451,6 +456,20 @@
             
             if (query.length === 0) {
                 suggestionsBox.innerHTML = "";
+                suggestionsBox.style.display = "none";
+                return;
+            }
+
+            // Kung ang tinype sa search bar ay Geo Coordinates (hal. 13.959590, 121.609863)
+            const coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
+            const match = query.match(coordRegex);
+            if (match) {
+                const lat = parseFloat(match[1]);
+                const lng = parseFloat(match[2]);
+                map.setView([lat, lng], 17);
+                marker.setLatLng([lat, lng]);
+                updateStreetView(lat, lng);
+                updateDetails(lat, lng);
                 suggestionsBox.style.display = "none";
                 return;
             }
