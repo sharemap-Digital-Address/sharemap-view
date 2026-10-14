@@ -86,13 +86,13 @@
         .suggestion-item:hover {
             background: #334155;
         }
+        .suggestion-item.history {
+            color: #38bdf8;
+        }
         .suggestion-item.pluscode {
             color: #38bdf8;
             font-weight: bold;
             background: #0b2239;
-        }
-        .suggestion-item.history {
-            color: #38bdf8;
         }
         .suggestion-item.gmaps {
             color: #38bdf8;
@@ -154,11 +154,11 @@
 
     <div class="container">
         <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Split-View Finder</h3>
-        <p style="font-size: 12px; color: #94a3b8; text-align:center;">I-type o i-paste ang Plus Code, Address, o Coordinates sa search bar.</p>
+        <p style="font-size: 12px; color: #94a3b8; text-align:center;">I-type ang Plus Code, Address, o Establishment sa search bar.</p>
 
         <!-- Search Input Bar -->
         <div class="search-box">
-            <input type="text" id="addressInput" placeholder="I-paste ang Plus Code (hal. 7Q53WJQ4+FG), Address..." autocomplete="off">
+            <input type="text" id="addressInput" placeholder="Mag-type ng Plus Code, address, o establishment..." autocomplete="off">
             <button id="clearBtn" title="Burahin">✕</button>
             <div id="suggestions"></div>
         </div>
@@ -166,7 +166,7 @@
         <!-- Split View Container -->
         <div class="split-view">
             <div>
-                <div class="info-label">📍 Map View (Interactive Pin)</div>
+                <div class="info-label">📍 Map View (Interactive)</div>
                 <div class="view-pane">
                     <div id="map"></div>
                 </div>
@@ -273,15 +273,20 @@
             return "Hindi nakuha ang detalye ng address";
         }
 
-        // Tumpak na Plus Code Parser
+        function cleanGoogleAddress(text) {
+            return text
+                .replace(/\bcor\b|\bcorner\b/gi, '')
+                .replace(/\b\d{4}\b/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        // Napakahalagang Plus Code Decoder gamit ang OLC library
         function parsePlusCode(text) {
             try {
-                // Kuhanin ang pattern na nakasulat tulad ng 7Q53WJQ4+FG o WHRV+69
-                const match = text.match(/([2-9a-z]{4,}\+[2-9a-z]{2,})/i);
+                const match = text.match(/([2-9CFGHJMPQRVWX]{4,}\+[2-9CFGHJMPQRVWX]{2,})/i);
                 if (match) {
                     let code = match[0].toUpperCase();
-                    // I-sanitize sa tamang OLC Alphabet
-                    code = code.replace(/I/g, '1').replace(/O/g, '0');
                     let fullCode = code;
 
                     if (OpenLocationCode.isShort(code)) {
@@ -340,21 +345,13 @@
             }
         }
 
-        function triggerLocationJump(lat, lng, name) {
-            map.setView([lat, lng], 17);
-            marker.setLatLng([lat, lng]);
-            updateStreetView(lat, lng);
-            updateDetails(lat, lng, name);
-            saveToSearchHistory({ name: name, lat: lat, lng: lng });
-        }
-
         async function searchAddress(query) {
             query = query.trim();
 
-            // 1. Unang i-check kung Plus Code
+            // 1. Unang iche-check kung Plus Code
             const plusResult = parsePlusCode(query);
             if (plusResult) {
-                return { lat: plusResult.lat, lng: plusResult.lng, name: `Plus Code: ${query}` };
+                return { lat: plusResult.lat, lng: plusResult.lng, name: query };
             }
 
             // 2. Geo Coordinates Check
@@ -364,9 +361,10 @@
                 return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), name: query };
             }
 
-            // 3. OpenStreetMap Search
+            // 3. OpenStreetMap Search para sa regular text address
+            const cleanedQuery = cleanGoogleAddress(query);
             try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(query)}`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(cleanedQuery)}`);
                 const data = await response.json();
                 if (data && data.length > 0) {
                     return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), name: data[0].display_name };
@@ -381,7 +379,10 @@
                 (position) => {
                     currentLat = position.coords.latitude;
                     currentLng = position.coords.longitude;
-                    triggerLocationJump(currentLat, currentLng, null);
+                    map.setView([currentLat, currentLng], 17);
+                    marker.setLatLng([currentLat, currentLng]);
+                    updateStreetView(currentLat, currentLng);
+                    updateDetails(currentLat, currentLng);
                 },
                 (error) => {
                     updateStreetView(currentLat, currentLng);
@@ -428,31 +429,37 @@
                 return;
             }
 
-            // Agad na saluhin kapag nag-paste ng Plus Code!
-            const plusResult = parsePlusCode(query);
-            if (plusResult) {
-                suggestionsBox.innerHTML = "";
-                const item = document.createElement('div');
-                item.className = 'suggestion-item pluscode';
-                item.innerText = `📍 [Plus Code Match] ${query} (I-click para tumalon)`;
-                item.onclick = () => {
-                    addressInput.value = query;
-                    clearBtn.style.display = "block";
-                    suggestionsBox.style.display = "none";
-                    triggerLocationJump(plusResult.lat, plusResult.lng, `Plus Code: ${query}`);
-                };
-                suggestionsBox.appendChild(item);
-                suggestionsBox.style.display = "block";
-                return;
-            }
-
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(async () => {
                 suggestionsBox.innerHTML = "";
                 let hasResults = false;
                 const lowerQuery = query.toLowerCase();
 
-                // Store & History Check
+                // 1. PLUS CODE LOCAL CHECK (HINDI NA DADAAN SA OSM!)
+                const plusResult = parsePlusCode(query);
+                if (plusResult) {
+                    hasResults = true;
+                    const item = document.createElement('div');
+                    item.className = 'suggestion-item pluscode';
+                    item.innerText = `📍 [Plus Code] ${query}`;
+                    item.onclick = () => {
+                        addressInput.value = query;
+                        clearBtn.style.display = "block";
+                        suggestionsBox.style.display = "none";
+
+                        map.setView([plusResult.lat, plusResult.lng], 17);
+                        marker.setLatLng([plusResult.lat, plusResult.lng]);
+                        updateStreetView(plusResult.lat, plusResult.lng);
+                        updateDetails(plusResult.lat, plusResult.lng, `Plus Code: ${query}`);
+
+                        saveToSearchHistory({ name: query, lat: plusResult.lat, lng: plusResult.lng });
+                    };
+                    suggestionsBox.appendChild(item);
+                    suggestionsBox.style.display = "block";
+                    return;
+                }
+
+                // 2. FILTERED RECENT SEARCHES
                 const history = getSearchHistory();
                 const matchedHistory = history.filter(h => h.name.toLowerCase().includes(lowerQuery));
                 
@@ -471,27 +478,98 @@
                             addressInput.value = item.name;
                             clearBtn.style.display = "block";
                             suggestionsBox.style.display = "none";
-                            triggerLocationJump(item.lat, item.lng, item.name);
+
+                            map.setView([item.lat, item.lng], 17);
+                            marker.setLatLng([item.lat, item.lng]);
+                            updateStreetView(item.lat, item.lng);
+                            updateDetails(item.lat, item.lng, item.name);
                         };
                         suggestionsBox.appendChild(div);
                     });
                 }
 
-                // Fallback Google Maps Option
-                const gmapsItem = document.createElement('div');
-                gmapsItem.className = 'suggestion-item gmaps';
-                gmapsItem.innerText = `🔍 Hanapin ang "${query}" sa Google Maps...`;
-                gmapsItem.onclick = () => {
-                    window.open(`https://www.google.com/maps/search/${encodeURIComponent(query)}`, '_blank');
-                    suggestionsBox.style.display = "none";
-                };
-                suggestionsBox.appendChild(gmapsItem);
+                // 3. FILTERED STORE BRANCHES
+                let matchedStores = storeDirectory.filter(s => s.name.toLowerCase().includes(lowerQuery) || s.address.toLowerCase().includes(lowerQuery));
+                
+                if (matchedStores.length > 0) {
+                    hasResults = true;
+                    matchedStores.forEach(store => {
+                        const item = document.createElement('div');
+                        item.className = 'suggestion-item';
+                        item.style.color = '#4ade80';
+                        item.innerText = `🏢 [Store Branch] ${store.name} - ${store.address}`;
+                        item.onclick = () => {
+                            addressInput.value = store.name;
+                            clearBtn.style.display = "block";
+                            suggestionsBox.style.display = "none";
 
-                suggestionsBox.style.display = "block";
+                            map.setView([store.lat, store.lng], 17);
+                            marker.setLatLng([store.lat, store.lng]);
+                            updateStreetView(store.lat, store.lng);
+                            updateDetails(store.lat, store.lng, `${store.name}, ${store.address}`);
+                            
+                            saveToSearchHistory({ name: store.name, lat: store.lat, lng: store.lng });
+                        };
+                        suggestionsBox.appendChild(item);
+                    });
+                }
+
+                // 4. OPENSTREETMAP RESULTS
+                try {
+                    const cleanedSearch = cleanGoogleAddress(query);
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(cleanedSearch)}`);
+                    const data = await response.json();
+                    
+                    if (data.length > 0) {
+                        hasResults = true;
+                        data.forEach(place => {
+                            const item = document.createElement('div');
+                            item.className = 'suggestion-item';
+                            item.innerText = place.display_name;
+                            item.onclick = () => {
+                                const lat = parseFloat(place.lat);
+                                const lng = parseFloat(place.lon);
+                                
+                                addressInput.value = place.display_name;
+                                clearBtn.style.display = "block";
+                                suggestionsBox.style.display = "none";
+
+                                map.setView([lat, lng], 17);
+                                marker.setLatLng([lat, lng]);
+                                updateStreetView(lat, lng);
+                                updateDetails(lat, lng, place.display_name);
+
+                                saveToSearchHistory({ name: place.display_name, lat: lat, lng: lng });
+                            };
+                            suggestionsBox.appendChild(item);
+                        });
+                    }
+                } catch (err) {
+                    console.error("Search error:", err);
+                }
+
+                // 5. GOOGLE MAPS FALLBACK
+                if (!hasResults) {
+                    const gmapsItem = document.createElement('div');
+                    gmapsItem.className = 'suggestion-item gmaps';
+                    gmapsItem.innerText = `🔍 Hanapin ang "${query}" sa Google Maps...`;
+                    gmapsItem.onclick = () => {
+                        window.open(`https://www.google.com/maps/search/${encodeURIComponent(query)}`, '_blank');
+                        suggestionsBox.style.display = "none";
+                    };
+                    suggestionsBox.appendChild(gmapsItem);
+                    hasResults = true;
+                }
+
+                if (hasResults) {
+                    suggestionsBox.style.display = "block";
+                } else {
+                    suggestionsBox.style.display = "none";
+                }
             }, 300);
         });
 
-        // Pindutin ang Enter para agad tumalon sa location!
+        // Pindutin ang Enter para tuwirang mag-search at tumalon sa location
         addressInput.addEventListener('keydown', async function(e) {
             if (e.key === 'Enter') {
                 const query = this.value.trim();
@@ -499,7 +577,11 @@
                     const result = await searchAddress(query);
                     if (result) {
                         suggestionsBox.style.display = "none";
-                        triggerLocationJump(result.lat, result.lng, result.name);
+                        map.setView([result.lat, result.lng], 17);
+                        marker.setLatLng([result.lat, result.lng]);
+                        updateStreetView(result.lat, result.lng);
+                        updateDetails(result.lat, result.lng, result.name);
+                        saveToSearchHistory({ name: query, lat: result.lat, lng: result.lng });
                     }
                 }
             }
