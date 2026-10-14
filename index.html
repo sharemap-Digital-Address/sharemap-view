@@ -199,7 +199,7 @@
         <!-- Plus Code Input Box with Real-time Suggestion -->
         <div class="pluscode-container">
             <div class="pluscode-bar">
-                <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. WHRV+69 Lucena City)..." autocomplete="off">
+                <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. WHRV+69 Lucena City, Quezon)..." autocomplete="off">
                 <button onclick="convertPlusCodeToGeo()">Convert to Geo</button>
             </div>
             <div id="plusCodeSuggestions"></div>
@@ -403,7 +403,7 @@
             }
         }
 
-        // REAL-TIME ONTEXTCHANGE / INPUT LISTENER PARA SA PLUS CODE RECOVERY
+        // REAL-TIME ONINPUT PARA SA TAMA AT LIGTAS NA RECOVERY NG PLUS CODE KASAMA ANG LUNGSOD/PROBINSYA
         const plusCodeInput = document.getElementById('plusCodeInput');
         const plusCodeSuggestions = document.getElementById('plusCodeSuggestions');
 
@@ -427,11 +427,11 @@
                     return;
                 }
 
-                let code = match[0].toUpperCase();
+                let shortCode = match[0].toUpperCase();
                 let referenceLat = currentLat;
                 let referenceLng = currentLng;
 
-                // Suriin kung may kasamang Town/City o Province sa text (e.g. Lucena City, Quezon)
+                // HIWALAYIN ANG LUNGSOD O LALAWIGAN SA TEKSTO (E.G. "Lucena City, Quezon")
                 let locationText = query.replace(match[0], "").trim();
                 if (locationText.length > 2) {
                     try {
@@ -441,7 +441,9 @@
                             referenceLat = parseFloat(geoData[0].lat);
                             referenceLng = parseFloat(geoData[0].lon);
                         }
-                    } catch(err) {}
+                    } catch(err) {
+                        console.log("OSM location search error:", err);
+                    }
                 }
 
                 const olc = window.OpenLocationCode || window.openLocationCode;
@@ -449,24 +451,27 @@
 
                 if (olc) {
                     try {
-                        if (olc.isShort(code) || code.length < 10) {
-                            finalFullCode = olc.recoverNearest(code, referenceLat, referenceLng);
-                        } else if (olc.isValid(code)) {
-                            finalFullCode = code;
+                        if (olc.isShort(shortCode) || shortCode.length < 10) {
+                            // Dito nagaganap ang magic: kinukuha ang area code (e.g. 7Q53) mula sa reference lat/lng at idinaragdag sa short code
+                            finalFullCode = olc.recoverNearest(shortCode, referenceLat, referenceLng);
+                        } else if (olc.isValid(shortCode)) {
+                            finalFullCode = shortCode;
                         }
-                    } catch(e) {}
+                    } catch(e) {
+                        console.error("OLC recover error:", e);
+                    }
                 }
 
-                if (plusCodeInput.value.trim() !== query) return; // Iwasan ang race condition
+                if (plusCodeInput.value.trim() !== query) return;
 
                 if (finalFullCode) {
                     const item = document.createElement('div');
                     item.className = 'suggestion-item';
                     item.style.color = '#38bdf8';
                     item.style.fontWeight = 'bold';
-                    item.innerHTML = `💡 Na-ayos na Plus Code: <strong>${finalFullCode}</strong>`;
+                    item.innerHTML = `💡 I-click para gamitin: <strong>${finalFullCode}</strong>`;
                     item.onclick = () => {
-                        plusCodeInput.value = finalFullCode; // Mabubura at mapapalitan ng kumpletong code
+                        plusCodeInput.value = finalFullCode; // Kusang mapapalitan ng buong inayos na Plus Code
                         plusCodeSuggestions.style.display = "none";
                     };
                     plusCodeSuggestions.appendChild(item);
@@ -478,14 +483,13 @@
             }, 300);
         });
 
-        // Isara ang suggestion kapag nag-click sa labas
         document.addEventListener('click', function(e) {
             if (!plusCodeInput.contains(e.target) && !plusCodeSuggestions.contains(e.target)) {
                 plusCodeSuggestions.style.display = "none";
             }
         });
 
-        // CONVERT TO GEO BUTTON FUNCTION (Hiwalay na aksyon gamit ang nakalagay nang kumpletong code sa input)
+        // CONVERT TO GEO BUTTON FUNCTION
         async function convertPlusCodeToGeo() {
             let inputVal = plusCodeInput.value.trim().toUpperCase();
             if (!inputVal) {
@@ -513,7 +517,7 @@
                     if (decoded) {
                         lat = decoded.latitudeCenter;
                         lng = decoded.longitudeCenter;
-                        plusCodeInput.value = fullCode; // Siguraduhing buong code ang nakalagay
+                        plusCodeInput.value = fullCode;
                     }
                 } catch(err) {}
             }
