@@ -196,7 +196,7 @@
         <h3 style="margin-top:0; text-align:center;">🗺️ ShareMap Split-View Finder</h3>
         <p style="font-size: 12px; color: #94a3b8; text-align:center;">Maghanap gamit ang Plus Code o General Address.</p>
 
-        <!-- Plus Code Input Box with Real-time Suggestion -->
+        <!-- Plus Code Input Box with Dynamic OSM Center Recovery -->
         <div class="pluscode-container">
             <div class="pluscode-bar">
                 <input type="text" id="plusCodeInput" placeholder="Plus Code (e.g. WHRV+69 Lucena City, Quezon)..." autocomplete="off">
@@ -403,7 +403,7 @@
             }
         }
 
-        // REAL-TIME ONINPUT PARA SA TAMA AT LIGTAS NA RECOVERY NG PLUS CODE KASAMA ANG LUNGSOD/PROBINSYA
+        // REAL-TIME ONSUGGESTION RECOVERY GAMIT ANG OSM DYNAMIC CENTER LOOKUP
         const plusCodeInput = document.getElementById('plusCodeInput');
         const plusCodeSuggestions = document.getElementById('plusCodeSuggestions');
 
@@ -431,10 +431,12 @@
                 let referenceLat = currentLat;
                 let referenceLng = currentLng;
 
-                // HIWALAYIN ANG LUNGSOD O LALAWIGAN SA TEKSTO (E.G. "Lucena City, Quezon")
+                // 1. Kunin ang bahagi ng text na pangalan ng Lungsod/Lalawigan (e.g. "Lucena City, Quezon")
                 let locationText = query.replace(match[0], "").trim();
+                
                 if (locationText.length > 2) {
                     try {
+                        // 2. I-query muna sa OSM Nominatim ang sentro ng lungsod na ito
                         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(locationText)}`);
                         const geoData = await res.json();
                         if (geoData && geoData.length > 0) {
@@ -442,7 +444,7 @@
                             referenceLng = parseFloat(geoData[0].lon);
                         }
                     } catch(err) {
-                        console.log("OSM location search error:", err);
+                        console.log("OSM city center search fallback:", err);
                     }
                 }
 
@@ -452,7 +454,7 @@
                 if (olc) {
                     try {
                         if (olc.isShort(shortCode) || shortCode.length < 10) {
-                            // Dito nagaganap ang magic: kinukuha ang area code (e.g. 7Q53) mula sa reference lat/lng at idinaragdag sa short code
+                            // 3. I-recover ang buong code gamit ang nahanap na dynamic center ng lungsod
                             finalFullCode = olc.recoverNearest(shortCode, referenceLat, referenceLng);
                         } else if (olc.isValid(shortCode)) {
                             finalFullCode = shortCode;
@@ -471,7 +473,7 @@
                     item.style.fontWeight = 'bold';
                     item.innerHTML = `💡 I-click para gamitin: <strong>${finalFullCode}</strong>`;
                     item.onclick = () => {
-                        plusCodeInput.value = finalFullCode; // Kusang mapapalitan ng buong inayos na Plus Code
+                        plusCodeInput.value = finalFullCode; // Mabubura at mapapalitan ng kumpletong code sa input field
                         plusCodeSuggestions.style.display = "none";
                     };
                     plusCodeSuggestions.appendChild(item);
@@ -480,7 +482,7 @@
                     plusCodeSuggestions.innerHTML = `<div class="suggestion-item" style="color: #f87171;">⚠️ No result or invalid plus code</div>`;
                     plusCodeSuggestions.style.display = "block";
                 }
-            }, 300);
+            }, 400);
         });
 
         document.addEventListener('click', function(e) {
