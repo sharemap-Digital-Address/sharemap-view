@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="tl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instant Plus Code</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; max-width: 400px; }
+    label { font-weight: bold; display: block; margin-bottom: 5px; }
+    input[type="text"] { width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; font-size: 15px; }
+    button { width: 100%; padding: 12px; background: #0275d8; color: white; border: none; font-weight: bold; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <label for="code-box">Digital Address (Plus Code):</label>
+  <input type="text" id="code-box" placeholder="Pindutin ang button sa ibaba...">
+
+  <button type="button" onclick="getInstantCode()">📍 Get Plus Code Instant</button>
+
+  <script>
+    const ALPHABET = "23456789CFGHJMPQRVWX";
+
+    // Standard 10-character Open Location Code (Plus Code) Algorithm
+    function encodeStandardPlusCode(lat, lng) {
+      lat = Math.min(Math.max(lat, -90), 90);
+      lng = ((lng + 180) % 360 + 360) % 360 - 180;
+      if (lat === 90) lat = 89.999999;
+
+      let latVal = lat + 90;
+      let lngVal = lng + 180;
+      let code = "";
+
+      let latPlace = 20;
+      let lngPlace = 20;
+
+      // Unang 8 characters (4 pairs)
+      for (let i = 0; i < 4; i++) {
+        let d1 = Math.floor(latVal / latPlace);
+        let d2 = Math.floor(lngVal / lngPlace);
+        latVal -= d1 * latPlace;
+        lngVal -= d2 * lngPlace;
+        code += ALPHABET.charAt(d1) + ALPHABET.charAt(d2);
+        
+        latPlace /= 20;
+        lngPlace /= 20;
+      }
+
+      // Ilalagay ang '+' sign eksakto pagkatapos ng 8th character
+      code += "+";
+
+      // Huling 2 characters (5th pair) para sa eksaktong pwesto
+      let d1 = Math.floor(latVal / latPlace);
+      let d2 = Math.floor(lngVal / lngPlace);
+      code += ALPHABET.charAt(d1) + ALPHABET.charAt(d2);
+
+      return code;
+    }
+
+    function getInstantCode() {
+      if (!navigator.geolocation) {
+        alert("Hindi suportado ng browser ang Geolocation.");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const code = encodeStandardPlusCode(pos.coords.latitude, pos.coords.longitude);
+          document.getElementById('code-box').value = code;
+        },
+        (err) => { 
+          alert("Siguraduhing naka-ON ang GPS sa notification bar ng phone mo."); 
+        },
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: Infinity }
+      );
+    }
+  </script>
+
+</body>
+</html>
