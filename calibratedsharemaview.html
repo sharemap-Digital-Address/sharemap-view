@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="tl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShareMap Split-View Finder</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0f172a;color:#fff;margin:0;padding:10px;display:flex;justify-content:center}
+.container{max-width:650px;width:100%;background:#1e293b;padding:12px;border-radius:12px;box-shadow:0 4px 15px #0006}
+h3{text-align:center;margin:5px 0;font-size:18px}.muted{font-size:12px;color:#94a3b8;text-align:center;margin-bottom:10px}
+.pluscode-container { position: relative; margin: 10px 0; }
+.search-container { position: relative; margin: 10px 0; }
+.bar{display:flex;gap:6px;position:relative;align-items:center}
+.input-wrapper { position: relative; display: flex; flex: 1; align-items: center; }
+input{width:100%;padding:12px 35px 12px 12px;border-radius:8px;border:1px solid #38bdf8;background:#0f172a;color:white;font-size:15px;outline:none}
+input:focus{border-color:#38bdf8}
+.clear-btn { position: absolute; right: 10px; background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; display: none; padding: 0; line-height: 1; }
+.clear-btn:hover { color: #fff; }
+button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}
+#status{display:none;padding:8px;margin:6px 0;border:1px solid #475569;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+#status.error{display:block;color:#fca5a5;border-color:#f87171}#status.ok{display:block;color:#86efac;border-color:#4ade80}#status.info{display:block;color:#bae6fd}#status.warn{display:block;color:#fde047;border-color:#eab308}
+.info-label{font-size:13px;color:#38bdf8;font-weight:bold;margin:10px 0 4px}
+.pane{height:280px;border-radius:8px;overflow:hidden;border:1px solid #475569;background:#111827}
+#map{width:100%;height:100%}iframe{width:100%;height:100%;border:0}
+.result{margin-top:12px;padding:10px;background:#0f172a;border:1px solid #475569;border-radius:8px;font-size:12px;overflow-wrap:anywhere}.item{margin:6px 0}.item span{color:#94a3b8}.result a{color:#38bdf8}
+.small{font-size:11px;color:#94a3b8;line-height:1.4;margin-top:10px}
+.suggestions{display:none;position:absolute;left:0;right:0;top:100%;z-index:9999;background:#0f172a;border:1px solid #38bdf8;max-height:180px;overflow:auto;border-radius:0 0 8px 8px}
+.suggestion{padding:10px;border-bottom:1px solid #334155;cursor:pointer;font-size:13px}
+.suggestion:hover{background:#334155}
+@media(max-width:440px){.bar{flex-direction:row}.pane{height:260px}}
+</style>
+<script src="./openlocationcode.js"></script>
+<script src="./location-search.js"></script>
+</head>
+<body>
+<main class="container">
+<h3>🗺️ ShareMap Split-View Finder</h3>
+<p class="muted">Maghanap gamit ang Plus Code o general address.</p>
+
+<div class="pluscode-container">
+    <div class="bar">
+        <div class="input-wrapper">
+            <input id="plusCodeInput" value="WHRV+69 Lucena City, Quezon" placeholder="Plus Code, hal. WHRV+69 Lucena City" autocomplete="off">
+            <button type="button" id="clearPlusBtn" class="clear-btn" title="Burahin">✕</button>
+        </div>
+        <button id="convertBtn">Convert</button>
+    </div>
+    <div id="plusCodeSuggestions" class="suggestions"></div>
+</div>
+
+<div id="status" role="status"></div>
+
+<div class="search-container">
+    <div class="bar">
+        <div class="input-wrapper">
+            <input id="addressInput" placeholder="Mag-type ng address o lat, lng" autocomplete="off">
+            <button type="button" id="clearAddressBtn" class="clear-btn" title="Burahin">✕</button>
+        </div>
+        <button id="searchBtn">Search</button>
+    </div>
+    <div id="addressSuggestions" class="suggestions"></div>
+</div>
+
+<div class="info-label">📍 Map View (Interactive)</div>
+<div class="pane"><div id="map"></div></div>
+
+<div class="info-label">📸 Street View Preview</div>
+<div class="pane"><iframe id="streetViewFrame" title="Google Street View preview" loading="lazy" allowfullscreen></iframe></div>
+
+<section class="result">
+<strong style="color:#38bdf8">📍 Pin Location Details</strong>
+<div class="item"><span>Digital Address (Plus Code):</span> <strong id="resPlusCode">—</strong></div>
+<div class="item"><span>Map link address:</span> <a id="resMapLink" href="#" target="_blank" rel="noopener">—</a></div>
+<div class="item"><span>Geo address:</span> <strong id="resGeo">—</strong></div>
+<div class="item"><span>Text Address:</span> <strong id="resTextAddr">—</strong></div>
+</section>
+
+<p class="small">Plus Code engine and reference-centre starter data are loaded from local repository files. Place-name lookup for locations not in the starter list still requires internet[span_3](start_span)[span_3](end_span). Map tiles, reverse geocoding and Street View also require internet[span_4](start_span)[span_4](end_span).</p>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const status = $("status");
+  let currentLat = 13.9411, currentLng = 121.6230;
+  
+  const map = L.map("map", {zoomControl:false}).setView([currentLat,currentLng], 15);
+  L.control.zoom({position:"topright"}).addTo(map);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom:19, attribution:"&copy; OpenStreetMap contributors"
+  }).addTo(map);
+  
+  const marker = L.marker([currentLat,currentLng], {draggable:true}).addTo(map);
+
+  function showStatus(message, type="info") {
+    status.className = type;
+    status.textContent = message;
+  }
+
+  function validCoords(lat,lng) {
+    return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+  }
+
+  async function reverseAddress(lat,lng) {
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="+lat+"&lon="+lng);
+      if (!r.ok) throw new Error("HTTP "+r.status);
+      const d = await r.json();
+      return d.display_name || "Hindi nakuha ang address";
+    } catch(e) { return "Hindi nakuha ang address (kailangan ng internet)."; }
+  }
+
+  function updateStreetView(lat,lng) {
+    $("streetViewFrame").src = "https://maps.google.com/maps?q=&layer=c&cbll="+lat+","+lng+"&cbp=12,0,0,0,5&output=svembed";
+  }
+
+  async function updateDetails(lat,lng,label) {
+    if (!validCoords(lat,lng)) return;
+    currentLat = lat; currentLng = lng;
+    const full = OpenLocationCode.encode(lat, lng, 10);
+    const geo = lat.toFixed(6) + ", " + lng.toFixed(6);
+    $("resPlusCode").textContent = full;
+    $("resGeo").textContent = geo;
+    const link = "https://maps.google.com/?q=" + lat + "," + lng;
+    $("resMapLink").href = link; 
+    $("resMapLink").textContent = link;
+    $("resTextAddr").textContent = label || "Kinukuha ang address…";
+    if (!label) $("resTextAddr").textContent = await reverseAddress(lat, lng);
+  }
+
+  async function setLocation(lat, lng, label, zoom=17) {
+    if (!validCoords(lat, lng)) throw new Error("Hindi valid ang latitude/longitude.");
+    map.setView([lat, lng], zoom); 
+    marker.setLatLng([lat, lng]);
+    updateStreetView(lat, lng); 
+    await updateDetails(lat, lng, label);
+  }
+
+  function parsePlusCodeInput(raw) {
+    const s = raw.toUpperCase().trim();
+    const m = s.match(/([23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,7})/);
+    if (!m) throw new Error("Hindi makita ang Plus Code. Halimbawa: WHRV+69 Lucena City, Quezon");
+    return {
+      code: m[1], 
+      locationText: (s.slice(0, m.index) + " " + s.slice(m.index + m[1].length)).replace(/^[\s,:;-]+|[\s,:;-]+$/g, "").trim()
+    };
+  }
+
+  async function convertPlusCode() {
+    try {
+      const raw = $("plusCodeInput").value.trim();
+      if (!raw) throw new Error("Maglagay muna ng Plus Code.");
+      if (!window.OpenLocationCode || typeof OpenLocationCode.recoverNearest !== "function") {
+        throw new Error("Hindi ma-load ang lokal na Plus Code engine.");
+      }
+      const parsed = parsePlusCodeInput(raw);
+      let full = parsed.code;
+      
+      if (OpenLocationCode.isShort(full)) {
+        let ref;
+        if (parsed.locationText) {
+          ref = await ShareMapLocationSearch.findReferenceLocation(parsed.locationText);
+        } else {
+          ref = { lat: currentLat, lng: currentLng, label: "kasalukuyang map center" };
+        }
+        full = OpenLocationCode.recoverNearest(full, ref.lat, ref.lng);
+        showStatus("Short code na-recover gamit ang reference: " + ref.label + " (" + ref.source + ")", "ok");
+      } else if (!OpenLocationCode.isValid(full) || !OpenLocationCode.isFull(full)) {
+        throw new Error("Hindi valid ang full Plus Code.");
+      }
+
+      const area = OpenLocationCode.decode(full);
+      if (!validCoords(area.latitudeCenter, area.longitudeCenter)) throw new Error("Hindi valid ang coordinates mula sa Plus Code.");
+      
+      $("plusCodeInput").value = full;
+      $("clearPlusBtn").style.display = "block";
+      await setLocation(area.latitudeCenter, area.longitudeCenter, "Plus Code " + full);
+    } catch(e) {
+      showStatus("⚠️ " + (e && e.message ? e.message : "Hindi na-convert ang Plus Code."), "error");
+    }
+  }
+
+  const plusCodeInput = $("plusCodeInput");
+  const clearPlusBtn = $("clearPlusBtn");
+  const plusCodeSuggestions = $("plusCodeSuggestions");
+  let debouncePlusCodeTimer;
+
+  function toggleClearButtons() {
+    clearPlusBtn.style.display = plusCodeInput.value.length > 0 ? "block" : "none";
+    clearAddressBtn.style.display = addressInput.value.length > 0 ? "block" : "none";
+  }
+
+  plusCodeInput.addEventListener("input", function() {
+    toggleClearButtons();
+    const query = this.value.trim();
+    plusCodeSuggestions.innerHTML = "";
+    
+    if (query.length === 0) {
+      plusCodeSuggestions.style.display = "none";
+      return;
+    }
+
+    clearTimeout(debouncePlusCodeTimer);
+    debouncePlusCodeTimer = setTimeout(async () => {
+      try {
+        const parsed = parsePlusCodeInput(query);
+        let shortCode = parsed.code;
+        
+        if (OpenLocationCode.isShort(shortCode)) {
+          let refLat = currentLat, refLng = currentLng;
+          if (parsed.locationText) {
+            try {
+              const ref = await ShareMapLocationSearch.findReferenceLocation(parsed.locationText);
+              refLat = ref.lat;
+              refLng = ref.lng;
+            } catch(err) {}
+          }
+
+          let recoveredFull = OpenLocationCode.recoverNearest(shortCode, refLat, refLng);
+          if (recoveredFull) {
+            const item = document.createElement('div');
+            item.className = 'suggestion';
+            item.innerHTML = `💡 I-click para gamitin: <strong>${recoveredFull}</strong>`;
+            item.onclick = () => {
+              plusCodeInput.value = recoveredFull;
+              toggleClearButtons();
+              plusCodeSuggestions.style.display = "none";
+            };
+            plusCodeSuggestions.appendChild(item);
+            plusCodeSuggestions.style.display = "block";
+            return;
+          }
+        }
+      } catch(e) {}
+      
+      plusCodeSuggestions.innerHTML = `<div class="suggestion" style="color: #f87171;">⚠️ No result or invalid plus code</div>`;
+      plusCodeSuggestions.style.display = "block";
+    }, 300);
+  });
+
+  clearPlusBtn.addEventListener("click", () => {
+    plusCodeInput.value = "";
+    clearPlusBtn.style.display = "none";
+    plusCodeSuggestions.style.display = "none";
+    plusCodeInput.focus();
+  });
+
+  const addressInput = $("addressInput");
+  const clearAddressBtn = $("clearAddressBtn");
+  const addressSuggestions = $("addressSuggestions");
+  let debounceAddressTimer;
+
+  addressInput.addEventListener("input", function() {
+    toggleClearButtons();
+    const query = this.value.trim();
+    addressSuggestions.innerHTML = "";
+
+    if (query.length < 3) {
+      addressSuggestions.style.display = "none";
+      return;
+    }
+
+    clearTimeout(debounceAddressTimer);
+    debounceAddressTimer = setTimeout(async () => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=` + encodeURIComponent(query));
+        if (!response.ok) return;
+        const results = await response.json();
+
+        if (results.length > 0) {
+          addressSuggestions.innerHTML = "";
+          results.forEach(place => {
+            const item = document.createElement('div');
+            item.className = 'suggestion';
+            item.textContent = place.display_name;
+            item.onclick = async () => {
+              addressInput.value = place.display_name;
+              toggleClearButtons();
+              addressSuggestions.style.display = "none";
+              const lat = Number(place.lat);
+              const lng = Number(place.lon);
+              await setLocation(lat, lng, place.display_name);
+              showStatus("Nahanap ang lugar: " + place.display_name, "ok");
+            };
+            addressSuggestions.appendChild(item);
+          });
+          addressSuggestions.style.display = "block";
+        } else {
+          addressSuggestions.innerHTML = `<div class="suggestion" style="color: #f87171;">Walang nahanap na resulta</div>`;
+          addressSuggestions.style.display = "block";
+        }
+      } catch(err) {
+        console.error("Nominatim search error:", err);
+      }
+    }, 350);
+  });
+
+  clearAddressBtn.addEventListener("click", () => {
+    addressInput.value = "";
+    clearAddressBtn.style.display = "none";
+    addressSuggestions.style.display = "none";
+    addressInput.focus();
+  });
+
+  document.addEventListener("click", function(e) {
+    ... // [na-retain ang event listener]
+  });
+
+  async function searchAddress() {
+    const q = addressInput.value.trim();
+    if (!q) { showStatus("Maglagay ng address o coordinates.", "error"); return; }
+    const m = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    try {
+      if (m) {
+        const lat = Number(m[1]), lng = Number(m[2]);
+        if (!validCoords(lat, lng)) throw new Error("Nasa labas ng valid latitude/longitude range.");
+        await setLocation(lat, lng);
+        showStatus("Naipakita ang coordinates.", "ok"); return;
+      }
+      const place = await ShareMapLocationSearch.findReferenceLocation(q);
+      await setLocation(place.lat, place.lng, place.label);
+      showStatus("Nahanap ang lugar gamit ang " + place.source + " reference.", "ok");
+    } catch(e) { showStatus("⚠️ " + e.message, "error"); }
+  }
+
+  $("convertBtn").addEventListener("click", convertPlusCode);
+  plusCodeInput.addEventListener("keydown", e => { if(e.key === "Enter") convertPlusCode(); });
+  $("searchBtn").addEventListener("click", searchAddress);
+  addressInput.addEventListener("keydown", e => { if(e.key === "Enter") { addressSuggestions.style.display = "none"; searchAddress(); } });
+
+  map.on("click", e => {
+    marker.setLatLng(e.latlng);
+    updateStreetView(e.latlng.lat, e.latlng.lng);
+    updateDetails(e.latlng.lat, e.latlng.lng);
+  });
+
+  marker.on("dragend", () => {
+    const p = marker.getLatLng();
+    updateStreetView(p.lat, p.lng);
+    updateDetails(p.lat, p.lng);
+  });
+
+  // -- AUTOMATIC GPS DETECTION NA MAY ACCURACY WARNING --
+  if (navigator.geolocation) {
+    showStatus("Kinukuha ang iyong eksaktong GPS location...", "info");
+    navigator.geolocation.getCurrentPosition(
+      async position => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy; // Sukat ng error sa metro
+
+        if (validCoords(lat, lng)) {
+          await setLocation(lat, lng);
+          
+          // Kung ang error ay mas mataas sa 50 metro, magbigay ng warning
+          if (accuracy > 50) {
+            showStatus(`⚠️ Mababa ang katumpakan ng GPS (Error: ~${Math.round(accuracy)}m).\n💡 Tip: I-calibrate ang compass sa Google Maps app kung kinakailangan.`, "warn");
+          } else {
+            showStatus(`✅ Tumpak ang lokasyon ng GPS (~${Math.round(accuracy)}m).`, "ok");
+          }
+        }
+      },
+      error => {
+        showStatus("Hindi nakuha ang GPS. Ginagamit ang default location.", "info");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  toggleClearButtons();
+  updateStreetView(currentLat, currentLng); 
+  updateDetails(currentLat, currentLng, "Lucena City Center, Quezon, Philippines");
+})();
+</script>
+</body>
+</html>
