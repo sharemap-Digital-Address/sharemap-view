@@ -19,7 +19,10 @@ input:focus{border-color:#38bdf8}
 .clear-btn:hover { color: #fff; }
 button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}
 #status{display:none;padding:8px;margin:6px 0;border:1px solid #475569;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
-#status.error{display:block;color:#fca5a5;border-color:#f87171}#status.ok{display:block;color:#86efac;border-color:#4ade80}#status.info{display:block;color:#bae6fd}#status.warn{display:block;color:#fde047;border-color:#eab308}
+#status.error{display:block;color:#fca5a5;border-color:#f87171}
+#status.ok{display:block;color:#86efac;border-color:#4ade80}
+#status.info{display:block;color:#bae6fd}
+#status.warn{display:block;color:#fde047;border-color:#eab308}
 .info-label{font-size:13px;color:#38bdf8;font-weight:bold;margin:10px 0 4px}
 .pane{height:280px;border-radius:8px;overflow:hidden;border:1px solid #475569;background:#111827}
 #map{width:100%;height:100%}iframe{width:100%;height:100%;border:0}
@@ -76,7 +79,7 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius
 <div class="item"><span>Text Address:</span> <strong id="resTextAddr">—</strong></div>
 </section>
 
-<p class="small">Plus Code engine and reference-centre starter data are loaded from local repository files. Place-name lookup for locations not in the starter list still requires internet[span_3](start_span)[span_3](end_span). Map tiles, reverse geocoding and Street View also require internet[span_4](start_span)[span_4](end_span).</p>
+<p class="small">Plus Code engine and reference-centre starter data are loaded from local repository files[span_0](start_span)[span_0](end_span). Place-name lookup for locations not in the starter list still requires internet[span_1](start_span)[span_1](end_span). Map tiles, reverse geocoding and Street View also require internet[span_2](start_span)[span_2](end_span).</p>
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -137,6 +140,8 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius
     marker.setLatLng([lat, lng]);
     updateStreetView(lat, lng); 
     await updateDetails(lat, lng, label);
+    // Siguraduhing mag-refresh ang mapa para hindi mag-blangko
+    setTimeout(() => { map.invalidateSize(); }, 200);
   }
 
   function parsePlusCodeInput(raw) {
@@ -306,7 +311,12 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius
   });
 
   document.addEventListener("click", function(e) {
-    ... // [na-retain ang event listener]
+    if (!plusCodeInput.contains(e.target) && !plusCodeSuggestions.contains(e.target)) {
+      plusCodeSuggestions.style.display = "none";
+    }
+    if (!addressInput.contains(e.target) && !addressSuggestions.contains(e.target)) {
+      addressSuggestions.style.display = "none";
+    }
   });
 
   async function searchAddress() {
@@ -343,19 +353,18 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius
     updateDetails(p.lat, p.lng);
   });
 
-  // -- AUTOMATIC GPS DETECTION NA MAY ACCURACY WARNING --
+  // -- AUTOMATIC GPS DETECTION NA MAY ACCURACY WARNING AT MAP FIX --
   if (navigator.geolocation) {
     showStatus("Kinukuha ang iyong eksaktong GPS location...", "info");
     navigator.geolocation.getCurrentPosition(
       async position => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
-        const accuracy = position.coords.accuracy; // Sukat ng error sa metro
+        const accuracy = position.coords.accuracy;
 
         if (validCoords(lat, lng)) {
           await setLocation(lat, lng);
           
-          // Kung ang error ay mas mataas sa 50 metro, magbigay ng warning
           if (accuracy > 50) {
             showStatus(`⚠️ Mababa ang katumpakan ng GPS (Error: ~${Math.round(accuracy)}m).\n💡 Tip: I-calibrate ang compass sa Google Maps app kung kinakailangan.`, "warn");
           } else {
@@ -365,9 +374,13 @@ button{background:#38bdf8;color:#0f172a;border:0;padding:12px 14px;border-radius
       },
       error => {
         showStatus("Hindi nakuha ang GPS. Ginagamit ang default location.", "info");
+        // Siguraduhing lalabas pa rin ang mapa kahit sakaling i-deny ng user ang GPS permission
+        setTimeout(() => { map.invalidateSize(); }, 200);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  } else {
+    setTimeout(() => { map.invalidateSize(); }, 200);
   }
 
   toggleClearButtons();
